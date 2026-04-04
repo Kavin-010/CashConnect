@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  rollNumber   String   @unique
+  department   String?
+  year         Int?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sentRequests     CashRequest[] @relation("requester")
+  acceptedRequests CashRequest[] @relation("acceptor")
+  sentMessages     Message[]     @relation("sender")
+  otpTokens        OtpToken[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model CashRequest {
+  id        String        @id @default(uuid())
+  amount    Float
+  reason    String
+  status    RequestStatus @default(OPEN)
+  expiresAt DateTime?     // ← NEW: requester sets how long request is visible
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  requesterId String
+  requester   User   @relation("requester", fields: [requesterId], references: [id])
+
+  acceptorId String?
+  acceptor   User?   @relation("acceptor", fields: [acceptorId], references: [id])
+
+  chatRoom ChatRoom?
+
+  @@index([status])
+  @@index([requesterId])
+  @@map("cash_requests")
+}
+
+enum RequestStatus {
+  OPEN
+  ACCEPTED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+model ChatRoom {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  requestId String      @unique
+  request   CashRequest @relation(fields: [requestId], references: [id])
+
+  messages Message[]
+
+  @@map("chat_rooms")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  senderId String
+  sender   User   @relation("sender", fields: [senderId], references: [id])
+
+  roomId String
+  room   ChatRoom @relation(fields: [roomId], references: [id])
+
+  @@index([roomId])
+  @@map("messages")
+}
+
+model OtpToken {
+  id        String     @id @default(uuid())
+  code      String
+  purpose   OtpPurpose
+  expiresAt DateTime
+  used      Boolean    @default(false)
+  createdAt DateTime   @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, purpose])
+  @@map("otp_tokens")
+}
+
+enum OtpPurpose {
+  PASSWORD_RESET
+  EMAIL_VERIFY
+}

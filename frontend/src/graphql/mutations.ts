@@ -1,0 +1,92 @@
+import { gql } from "@apollo/client";
+
+export const SIGNUP_MUTATION = gql`
+  mutation Signup($input: SignupInput!) {
+    signup(input: $input) {
+      token
+      user { id email name rollNumber }
+    }
+  }
+`;
+
+export const LOGIN_MUTATION = gql`
+  mutation Login($input: LoginInput!) {
+    login(input: $input) {
+      token
+      user { id email name rollNumber }
+    }
+  }
+`;
+
+export const FORGOT_PASSWORD_MUTATION = gql`
+  mutation ForgotPassword($email: String!) {
+    forgotPassword(email: $email)
+  }
+`;
+
+export const VERIFY_OTP_MUTATION = gql`
+  mutation VerifyOtp($email: String!, $code: String!) {
+    verifyOtp(email: $email, code: $code)
+  }
+`;
+
+export const RESET_PASSWORD_MUTATION = gql`
+  mutation ResetPassword($token: String!, $newPassword: String!) {
+    resetPassword(token: $token, newPassword: $newPassword)
+  }
+`;
+
+export const POST_REQUEST_MUTATION = gql`
+  mutation PostRequest($input: PostRequestInput!) {
+    postRequest(input: $input) {
+      id
+      amount
+      reason
+      status
+      expiresAt
+      createdAt
+      requester { id name rollNumber }
+    }
+  }
+`;
+
+export const ACCEPT_REQUEST_MUTATION = gql`
+  mutation AcceptRequest($requestId: String!) {
+    acceptRequest(requestId: $requestId) {
+      id
+      status
+      acceptor { id name }
+      chatRoom { id }
+    }
+  }
+`;
+
+export const COMPLETE_REQUEST_MUTATION = gql`
+  mutation CompleteRequest($requestId: String!) {
+    completeRequest(requestId: $requestId) {
+      id
+      status
+    }
+  }
+`;
+
+export const CANCEL_REQUEST_MUTATION = gql`
+  mutation CancelRequest($requestId: String!) {
+    cancelRequest(requestId: $requestId) {
+      id
+      status
+    }
+  }
+`;
+
+export const SEND_MESSAGE_MUTATION = gql`
+  mutation SendMessage($input: SendMessageInput!) {
+    sendMessage(input: $input) {
+      id
+      content
+      createdAt
+      roomId
+      sender { id name }
+    }
+  }
+`;
