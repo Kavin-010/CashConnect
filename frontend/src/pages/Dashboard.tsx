@@ -31,17 +31,6 @@ function timeLeft(expiresAt) {
   return `Expires in ${mins}m`;
 }
 
-function statusBadge(status) {
-  const map = {
-    OPEN:      "bg-green-700 text-green-200",
-    ACCEPTED:  "bg-blue-700 text-blue-200",
-    COMPLETED: "bg-gray-600 text-gray-200",
-    CANCELLED: "bg-red-800 text-red-200",
-    EXPIRED:   "bg-yellow-800 text-yellow-200",
-  };
-  return map[status] ?? "bg-gray-700 text-gray-300";
-}
-
 // ── Notification Banner ───────────────────────────────────────────────────────
 
 function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
@@ -77,8 +66,6 @@ function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
 }
 
 // ── Request Subscriber ────────────────────────────────────────────────────────
-// Separate component so useSubscription can be called per request
-// (hooks cannot be called inside loops)
 
 function RequestSubscriber({ requestId, onStatusChange }) {
   useSubscription(REQUEST_STATUS_CHANGED_SUBSCRIPTION, {
@@ -104,6 +91,18 @@ function Dashboard() {
   // ── Notifications ─────────────────────────────────────────────────────────
   const [notifications, setNotifications] = useState([]);
 
+  // ── My requests (for subscription tracking + active count badge) ──────────
+  const {
+    data: myData,
+    refetch: refetchMy,
+  } = useQuery(MY_REQUESTS_QUERY, { fetchPolicy: "network-only" });
+
+  const myActiveRequests = (myData?.myRequests ?? []).filter(
+    (r) => r.status === "OPEN" || r.status === "ACCEPTED"
+  );
+
+  const activeCount = myActiveRequests.length;
+
   const handleStatusChange = (updatedRequest) => {
     if (updatedRequest.status === "ACCEPTED" && updatedRequest.acceptor) {
       setNotifications((prev) => [
@@ -127,17 +126,6 @@ function Dashboard() {
     navigate(`/chat/${requestId}`);
   };
 
-  // ── My requests ───────────────────────────────────────────────────────────
-  const {
-    data: myData,
-    loading: myLoading,
-    refetch: refetchMy,
-  } = useQuery(MY_REQUESTS_QUERY, { fetchPolicy: "network-only" });
-
-  const myActiveRequests = (myData?.myRequests ?? []).filter(
-    (r) => r.status === "OPEN" || r.status === "ACCEPTED"
-  );
-
   // ── Open requests from others ─────────────────────────────────────────────
   const {
     data: openData,
@@ -147,9 +135,9 @@ function Dashboard() {
   } = useQuery(OPEN_REQUESTS_QUERY, { fetchPolicy: "network-only" });
 
   // ── Post request ──────────────────────────────────────────────────────────
-  const [amount, setAmount]           = useState("");
-  const [reason, setReason]           = useState("");
-  const [expiryMins, setExpiryMins]   = useState("60");
+  const [amount, setAmount]         = useState("");
+  const [reason, setReason]         = useState("");
+  const [expiryMins, setExpiryMins] = useState("60");
 
   const [postMutation, { loading: postLoading }] = useMutation(POST_REQUEST_MUTATION, {
     refetchQueries: [{ query: OPEN_REQUESTS_QUERY }, { query: MY_REQUESTS_QUERY }],
@@ -199,6 +187,7 @@ function Dashboard() {
     if (!confirm("Mark this request as completed?")) return;
     try {
       await completeMutation({ variables: { requestId } });
+      refetchMy();
     } catch (err) {
       alert(err.message ?? "Failed to complete");
     }
@@ -213,6 +202,7 @@ function Dashboard() {
     if (!confirm("Cancel this request?")) return;
     try {
       await cancelMutation({ variables: { requestId } });
+      refetchMy();
     } catch (err) {
       alert(err.message ?? "Failed to cancel");
     }
@@ -244,7 +234,7 @@ function Dashboard() {
         />
       ))}
 
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex justify-between items-center mb-1">
         <h1 className="text-2xl font-bold">CampusCash Dashboard 💸</h1>
         <button
@@ -259,6 +249,34 @@ function Dashboard() {
         <span className="text-white font-medium">{currentUser?.name}</span>{" "}
         ({currentUser?.email})
       </p>
+
+      {/* ── My Requests History Button ── */}
+      <button
+        onClick={() => navigate("/history")}
+        className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-indigo-500 px-4 py-3 rounded-xl mb-6 transition-all group"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📋</span>
+          <div className="text-left">
+            <p className="font-semibold text-white group-hover:text-indigo-300 transition-colors">
+              My Requests
+            </p>
+            <p className="text-gray-400 text-xs">
+              View history, active requests and logs
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {activeCount > 0 && (
+            <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              {activeCount} active
+            </span>
+          )}
+          <span className="text-gray-400 group-hover:text-indigo-300 transition-colors text-lg">
+            →
+          </span>
+        </div>
+      </button>
 
       {/* ── Post Request ── */}
       <div className="bg-gray-800 p-4 rounded-xl mb-6">
@@ -307,87 +325,6 @@ function Dashboard() {
         >
           {postLoading ? "Posting..." : "Post Request"}
         </button>
-      </div>
-
-      {/* ── My Requests ── */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="font-semibold">My Requests</h2>
-          <button
-            onClick={() => refetchMy()}
-            className="text-xs text-gray-400 hover:text-white"
-          >
-            ↻ Refresh
-          </button>
-        </div>
-
-        {myLoading ? (
-          <p className="text-gray-400">Loading...</p>
-        ) : (myData?.myRequests ?? []).length === 0 ? (
-          <p className="text-gray-400">You haven't posted any requests yet</p>
-        ) : (
-          <div className="space-y-3">
-            {(myData?.myRequests ?? []).map((req) => (
-              <div key={req.id} className="bg-gray-800 p-4 rounded-xl">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold">₹{req.amount}</p>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${statusBadge(req.status)}`}
-                      >
-                        {req.status}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-400">{req.reason}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Posted: {formatDate(req.createdAt)}
-                    </p>
-                    {req.expiresAt && req.status === "OPEN" && (
-                      <p className="text-xs text-yellow-400 mt-1">
-                        {timeLeft(req.expiresAt)}
-                      </p>
-                    )}
-                    {req.acceptor && (
-                      <p className="text-green-400 text-sm mt-1">
-                        Accepted by:{" "}
-                        <span className="font-semibold">{req.acceptor.name}</span>{" "}
-                        ({req.acceptor.rollNumber})
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-2 ml-4">
-                    {req.status === "ACCEPTED" && req.chatRoom && (
-                      <button
-                        onClick={() => navigate(`/chat/${req.id}`)}
-                        className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded text-sm"
-                      >
-                        Open Chat
-                      </button>
-                    )}
-                    {req.status === "ACCEPTED" && (
-                      <button
-                        onClick={() => handleComplete(req.id)}
-                        className="bg-green-700 hover:bg-green-600 px-3 py-1 rounded text-sm"
-                      >
-                        Mark Done ✓
-                      </button>
-                    )}
-                    {["OPEN", "ACCEPTED"].includes(req.status) && (
-                      <button
-                        onClick={() => handleCancel(req.id)}
-                        className="bg-red-800 hover:bg-red-700 px-3 py-1 rounded text-sm"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* ── Active Requests from others ── */}
