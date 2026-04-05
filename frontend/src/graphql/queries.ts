@@ -19,6 +19,7 @@ export const OPEN_REQUESTS_QUERY = gql`
       id
       amount
       reason
+      location
       status
       expiresAt
       createdAt
@@ -39,6 +40,7 @@ export const MY_REQUESTS_QUERY = gql`
       amount
       reason
       status
+      location
       expiresAt
       createdAt
       acceptor {

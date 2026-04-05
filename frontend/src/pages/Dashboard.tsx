@@ -6,13 +6,9 @@ import { ME_QUERY, OPEN_REQUESTS_QUERY, MY_REQUESTS_QUERY } from "../graphql/que
 import {
   POST_REQUEST_MUTATION,
   ACCEPT_REQUEST_MUTATION,
-  COMPLETE_REQUEST_MUTATION,
-  CANCEL_REQUEST_MUTATION,
 } from "../graphql/mutations";
 import { REQUEST_STATUS_CHANGED_SUBSCRIPTION } from "../graphql/subscriptions";
 import { clearToken } from "../lib/apolloClient";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString("en-IN", {
@@ -30,8 +26,6 @@ function timeLeft(expiresAt) {
   if (hrs > 0) return `Expires in ${hrs}h ${mins % 60}m`;
   return `Expires in ${mins}m`;
 }
-
-// ── Notification Banner ───────────────────────────────────────────────────────
 
 function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
   if (notifications.length === 0) return null;
@@ -65,8 +59,6 @@ function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
   );
 }
 
-// ── Request Subscriber ────────────────────────────────────────────────────────
-
 function RequestSubscriber({ requestId, onStatusChange }) {
   useSubscription(REQUEST_STATUS_CHANGED_SUBSCRIPTION, {
     variables: { requestId },
@@ -79,19 +71,14 @@ function RequestSubscriber({ requestId, onStatusChange }) {
   return null;
 }
 
-// ── Main Dashboard ────────────────────────────────────────────────────────────
-
 function Dashboard() {
   const navigate = useNavigate();
 
-  // ── Current user ──────────────────────────────────────────────────────────
   const { data: meData } = useQuery(ME_QUERY);
   const currentUser = meData?.me;
 
-  // ── Notifications ─────────────────────────────────────────────────────────
   const [notifications, setNotifications] = useState([]);
 
-  // ── My requests (for subscription tracking + active count badge) ──────────
   const {
     data: myData,
     refetch: refetchMy,
@@ -100,8 +87,6 @@ function Dashboard() {
   const myActiveRequests = (myData?.myRequests ?? []).filter(
     (r) => r.status === "OPEN" || r.status === "ACCEPTED"
   );
-
-  const activeCount = myActiveRequests.length;
 
   const handleStatusChange = (updatedRequest) => {
     if (updatedRequest.status === "ACCEPTED" && updatedRequest.acceptor) {
@@ -126,7 +111,6 @@ function Dashboard() {
     navigate(`/chat/${requestId}`);
   };
 
-  // ── Open requests from others ─────────────────────────────────────────────
   const {
     data: openData,
     loading: openLoading,
@@ -134,36 +118,40 @@ function Dashboard() {
     refetch: refetchOpen,
   } = useQuery(OPEN_REQUESTS_QUERY, { fetchPolicy: "network-only" });
 
-  // ── Post request ──────────────────────────────────────────────────────────
-  const [amount, setAmount]         = useState("");
-  const [reason, setReason]         = useState("");
-  const [expiryMins, setExpiryMins] = useState("60");
+  const [amount, setAmount]           = useState("");
+  const [reason, setReason]           = useState("");
+  const [location, setLocation]       = useState("");
+  const [expiryMins, setExpiryMins]   = useState("60");
 
   const [postMutation, { loading: postLoading }] = useMutation(POST_REQUEST_MUTATION, {
     refetchQueries: [{ query: OPEN_REQUESTS_QUERY }, { query: MY_REQUESTS_QUERY }],
   });
 
   const handlePost = async () => {
-    if (!amount || !reason) { alert("Fill all fields"); return; }
+    if (!amount || !reason || !location) {
+      alert("Fill all fields including location");
+      return;
+    }
     try {
       await postMutation({
         variables: {
           input: {
             amount: Number(amount),
             reason,
+            location,
             expiresInMinutes: Number(expiryMins),
           },
         },
       });
       setAmount("");
       setReason("");
+      setLocation("");
       setExpiryMins("60");
     } catch (err) {
       alert(err.message ?? "Failed to post request");
     }
   };
 
-  // ── Accept request ────────────────────────────────────────────────────────
   const [acceptMutation, { loading: acceptLoading }] = useMutation(
     ACCEPT_REQUEST_MUTATION,
     { refetchQueries: [{ query: OPEN_REQUESTS_QUERY }] }
@@ -178,54 +166,20 @@ function Dashboard() {
     }
   };
 
-  // ── Complete request ──────────────────────────────────────────────────────
-  const [completeMutation] = useMutation(COMPLETE_REQUEST_MUTATION, {
-    refetchQueries: [{ query: MY_REQUESTS_QUERY }],
-  });
-
-  const handleComplete = async (requestId) => {
-    if (!confirm("Mark this request as completed?")) return;
-    try {
-      await completeMutation({ variables: { requestId } });
-      refetchMy();
-    } catch (err) {
-      alert(err.message ?? "Failed to complete");
-    }
-  };
-
-  // ── Cancel request ────────────────────────────────────────────────────────
-  const [cancelMutation] = useMutation(CANCEL_REQUEST_MUTATION, {
-    refetchQueries: [{ query: MY_REQUESTS_QUERY }, { query: OPEN_REQUESTS_QUERY }],
-  });
-
-  const handleCancel = async (requestId) => {
-    if (!confirm("Cancel this request?")) return;
-    try {
-      await cancelMutation({ variables: { requestId } });
-      refetchMy();
-    } catch (err) {
-      alert(err.message ?? "Failed to cancel");
-    }
-  };
-
-  // ── Logout ────────────────────────────────────────────────────────────────
   const logout = () => {
     clearToken();
     navigate("/");
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
 
-      {/* Notification Banner */}
       <NotificationBanner
         notifications={notifications}
         onDismiss={dismissNotification}
         onGoToChat={goToChat}
       />
 
-      {/* Subscribe to each active request for real-time status changes */}
       {myActiveRequests.map((req) => (
         <RequestSubscriber
           key={req.id}
@@ -234,51 +188,51 @@ function Dashboard() {
         />
       ))}
 
-      {/* ── Header ── */}
       <div className="flex justify-between items-center mb-1">
         <h1 className="text-2xl font-bold">CampusCash Dashboard 💸</h1>
-        <button
-          onClick={logout}
-          className="text-sm text-gray-400 hover:text-white"
-        >
-          Logout
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate("/profile")}
+            className="text-sm text-gray-400 hover:text-white"
+          >
+            Profile
+          </button>
+          <button
+            onClick={logout}
+            className="text-sm text-gray-400 hover:text-white"
+          >
+            Logout
+          </button>
+        </div>
       </div>
+
       <p className="text-gray-400 mb-6">
         Logged in as:{" "}
         <span className="text-white font-medium">{currentUser?.name}</span>{" "}
         ({currentUser?.email})
       </p>
 
-      {/* ── My Requests History Button ── */}
       <button
         onClick={() => navigate("/history")}
-        className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-indigo-500 px-4 py-3 rounded-xl mb-6 transition-all group"
+        className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl mb-6 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <span className="text-2xl">📋</span>
+          <span className="text-xl">📋</span>
           <div className="text-left">
-            <p className="font-semibold text-white group-hover:text-indigo-300 transition-colors">
-              My Requests
-            </p>
+            <p className="font-semibold text-sm">My Requests</p>
             <p className="text-gray-400 text-xs">
-              View history, active requests and logs
+              View your active and past requests
+              {myActiveRequests.length > 0 && (
+                <span className="ml-2 bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-full">
+                  {myActiveRequests.length} active
+                </span>
+              )}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {activeCount > 0 && (
-            <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-              {activeCount} active
-            </span>
-          )}
-          <span className="text-gray-400 group-hover:text-indigo-300 transition-colors text-lg">
-            →
-          </span>
-        </div>
+        <span className="text-gray-400 text-lg">→</span>
       </button>
 
-      {/* ── Post Request ── */}
       <div className="bg-gray-800 p-4 rounded-xl mb-6">
         <h2 className="mb-3 font-semibold">Post Cash Request</h2>
 
@@ -292,9 +246,17 @@ function Dashboard() {
 
         <input
           type="text"
-          placeholder="Reason (Canteen / Library / etc.)"
+          placeholder="Reason (e.g. Need cash for canteen)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
+          className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
+        />
+
+        <input
+          type="text"
+          placeholder="📍 Location (e.g. Canteen Block A, Main Library, Xerox Shop)"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
           className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
         />
 
@@ -327,7 +289,6 @@ function Dashboard() {
         </button>
       </div>
 
-      {/* ── Active Requests from others ── */}
       <div>
         <div className="flex justify-between items-center mb-3">
           <h2 className="font-semibold">Active Requests</h2>
@@ -354,15 +315,24 @@ function Dashboard() {
                 key={req.id}
                 className="bg-gray-800 p-4 rounded-xl flex justify-between items-start"
               >
-                <div>
+                <div className="flex-1">
                   <p className="font-semibold">₹{req.amount}</p>
-                  <p className="text-sm text-gray-400">{req.reason}</p>
+                  <p className="text-sm text-gray-400 mt-0.5">{req.reason}</p>
+
+                  {req.location && (
+                    <p className="text-xs text-indigo-300 mt-1">
+                      📍 {req.location}
+                    </p>
+                  )}
+
                   <p className="text-xs text-gray-500 mt-1">
                     By {req.requester.name} ({req.requester.rollNumber})
+                    {req.requester.department && ` · ${req.requester.department}`}
                   </p>
                   <p className="text-xs text-gray-500">
                     Posted: {formatDate(req.createdAt)}
                   </p>
+
                   {req.expiresAt && (
                     <p className="text-xs text-yellow-400 mt-1">
                       {timeLeft(req.expiresAt)}
@@ -373,7 +343,7 @@ function Dashboard() {
                 <button
                   onClick={() => handleAccept(req.id)}
                   disabled={acceptLoading}
-                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-50 ml-4 mt-1"
+                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-50 ml-4 mt-1 text-sm"
                 >
                   Accept
                 </button>

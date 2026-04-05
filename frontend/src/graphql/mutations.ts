@@ -42,6 +42,7 @@ export const POST_REQUEST_MUTATION = gql`
       id
       amount
       reason
+      location
       status
       expiresAt
       createdAt
@@ -88,5 +89,24 @@ export const SEND_MESSAGE_MUTATION = gql`
       roomId
       sender { id name }
     }
+  }
+`;
+
+export const UPDATE_PROFILE_MUTATION = gql`
+  mutation UpdateProfile($input: UpdateProfileInput!) {
+    updateProfile(input: $input) {
+      id
+      name
+      email
+      rollNumber
+      department
+      year
+    }
+  }
+`;
+
+export const CHANGE_PASSWORD_MUTATION = gql`
+  mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
+    changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
   }
 `;

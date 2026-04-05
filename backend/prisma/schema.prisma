@@ -32,8 +32,9 @@ model CashRequest {
   id        String        @id @default(uuid())
   amount    Float
   reason    String
+  location  String?       // ← NEW: location inside campus
   status    RequestStatus @default(OPEN)
-  expiresAt DateTime?     // ← NEW: requester sets how long request is visible
+  expiresAt DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 

@@ -55,3 +55,41 @@ export async function login(prisma: PrismaClient, input: LoginInput) {
   const token = signToken({ userId: user.id, email: user.email, name: user.name });
   return { token, user };
 }
+
+// ── Update Profile ────────────────────────────────────────────────────────────
+export async function updateProfile(
+  prisma: PrismaClient,
+  userId: string,
+  input: { name?: string; department?: string; year?: number }
+) {
+  const data: any = {};
+  if (input.name)       data.name       = input.name;
+  if (input.department) data.department = input.department;
+  if (input.year)       data.year       = input.year;
+
+  return prisma.user.update({
+    where: { id: userId },
+    data,
+  });
+}
+
+// ── Change Password ───────────────────────────────────────────────────────────
+export async function changePassword(
+  prisma: PrismaClient,
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+) {
+  if (newPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters.");
+  }
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) throw new Error("Current password is incorrect.");
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  return true;
+}

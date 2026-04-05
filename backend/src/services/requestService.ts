@@ -3,15 +3,15 @@ import { PrismaClient } from "@prisma/client";
 import { pubsub, EVENTS } from "../graphql/pubsub";
 
 const PostRequestSchema = z.object({
-  amount: z.number().positive().max(10000),
-  reason: z.string().min(5).max(500),
-  expiresInMinutes: z.number().min(5).max(1440).optional(), // 5 min to 24 hours
+  amount:           z.number().positive().max(10000),
+  reason:           z.string().min(5).max(500),
+  location:         z.string().min(2).max(200).optional(),
+  expiresInMinutes: z.number().min(5).max(1440).optional(),
 });
 
 export async function getOpenRequests(prisma: PrismaClient, currentUserId: string) {
   const now = new Date();
 
-  // Auto-expire requests whose time has passed
   await prisma.cashRequest.updateMany({
     where: {
       status: "OPEN",
@@ -41,11 +41,10 @@ export async function getMyRequests(prisma: PrismaClient, userId: string) {
 export async function postRequest(
   prisma: PrismaClient,
   requesterId: string,
-  input: { amount: number; reason: string; expiresInMinutes?: number }
+  input: { amount: number; reason: string; location?: string; expiresInMinutes?: number }
 ) {
   const data = PostRequestSchema.parse(input);
 
-  // Calculate expiry time if provided
   const expiresAt = data.expiresInMinutes
     ? new Date(Date.now() + data.expiresInMinutes * 60 * 1000)
     : null;
@@ -53,8 +52,9 @@ export async function postRequest(
   return prisma.cashRequest.create({
     data: {
       requesterId,
-      amount: data.amount,
-      reason: data.reason,
+      amount:   data.amount,
+      reason:   data.reason,
+      location: data.location,
       expiresAt,
     },
     include: { requester: true, acceptor: true },
@@ -71,7 +71,6 @@ export async function acceptRequest(
   if (existing.status !== "OPEN") throw new Error("Request is no longer available.");
   if (existing.requesterId === acceptorId) throw new Error("You cannot accept your own request.");
 
-  // Check if expired
   if (existing.expiresAt && existing.expiresAt < new Date()) {
     await prisma.cashRequest.update({
       where: { id: requestId },

@@ -30,6 +30,7 @@ export const typeDefs = `#graphql
     id:        String!
     amount:    Float!
     reason:    String!
+    location:  String        # ← NEW
     status:    RequestStatus!
     expiresAt: DateTime
     createdAt: DateTime!
@@ -69,7 +70,8 @@ export const typeDefs = `#graphql
   input PostRequestInput {
     amount:           Float!
     reason:           String!
-    expiresInMinutes: Int    # ← NEW: how many minutes until request expires
+    location:         String   # ← NEW
+    expiresInMinutes: Int
   }
 
   input SendMessageInput {
@@ -86,6 +88,12 @@ export const typeDefs = `#graphql
     myRequests: [CashRequest!]!    # ← NEW: requester sees their own requests
   }
 
+  input UpdateProfileInput {
+  name:       String
+  department: String
+  year:       Int
+  }
+  
   type Mutation {
     signup(input: SignupInput!):  AuthPayload!
     login(input: LoginInput!):   AuthPayload!
@@ -93,6 +101,8 @@ export const typeDefs = `#graphql
     forgotPassword(email: String!):                      Boolean!
     verifyOtp(email: String!, code: String!):            String!
     resetPassword(token: String!, newPassword: String!): Boolean!
+    updateProfile(input: UpdateProfileInput!): User!
+    changePassword(currentPassword: String!, newPassword: String!): Boolean!
 
     postRequest(input: PostRequestInput!):  CashRequest!
     acceptRequest(requestId: String!):      CashRequest!

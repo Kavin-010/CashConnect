@@ -1,6 +1,5 @@
 import { withFilter } from "graphql-subscriptions";
 import { requireAuth } from "../middleware/auth";
-import { signup, login } from "../services/authService";
 import { generateAndSendOtp, verifyOtp, resetPassword } from "../services/otpService";
 import {
   getOpenRequests, getMyRequests, postRequest,
@@ -11,6 +10,7 @@ import { EVENTS } from "./pubsub";
 import type { PrismaClient } from "@prisma/client";
 import type { PubSub } from "graphql-subscriptions";
 import type { JwtPayload } from "../middleware/auth";
+import { signup, login, updateProfile, changePassword } from "../services/authService";
 
 interface Context {
   user: JwtPayload | null;
@@ -76,6 +76,18 @@ export const resolvers = {
       const { userId } = requireAuth(ctx);
       return sendMessage(ctx.prisma, userId, input);
     },
+    updateProfile: async (_: unknown, { input }: { input: any }, ctx: Context) => {
+      const { userId } = requireAuth(ctx);
+      return updateProfile(ctx.prisma, userId, input);
+    },
+    changePassword: async (
+      _: unknown,
+      { currentPassword, newPassword }: { currentPassword: string; newPassword: string },
+      ctx: Context
+    ) => {
+      const { userId } = requireAuth(ctx);
+      return changePassword(ctx.prisma, userId, currentPassword, newPassword);
+    }, 
   },
 
   Subscription: {

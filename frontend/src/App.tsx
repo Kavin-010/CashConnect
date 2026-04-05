@@ -7,6 +7,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import RequestHistory from "./pages/RequestHistory";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
+import Profile from "./pages/Profile";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/chat/:requestId" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
       <Route path="/history" element={<ProtectedRoute><RequestHistory /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
     </Routes>
   );
 }
