@@ -12,6 +12,9 @@ import type { PubSub } from "graphql-subscriptions";
 import type { JwtPayload } from "../middleware/auth";
 import { signup, login, updateProfile, changePassword } from "../services/authService";
 
+/* ✅ ADDED IMPORT */
+import { submitRating, getUserRatings, getMyRatingForRequest } from "../services/ratingService";
+
 interface Context {
   user: JwtPayload | null;
   prisma: PrismaClient;
@@ -46,6 +49,18 @@ export const resolvers = {
     messages: async (_: unknown, { roomId }: { roomId: string }, ctx: Context) => {
       const { userId } = requireAuth(ctx);
       return getMessages(ctx.prisma, roomId, userId);
+    },
+
+    /* ✅ ADDED QUERY */
+    userRatings: async (_: unknown, { userId }: { userId: string }, ctx: Context) => {
+      requireAuth(ctx);
+      return getUserRatings(ctx.prisma, userId);
+    },
+
+    /* ✅ ADDED QUERY */
+    myRatingForRequest: async (_: unknown, { requestId }: { requestId: string }, ctx: Context) => {
+      const { userId } = requireAuth(ctx);
+      return getMyRatingForRequest(ctx.prisma, userId, requestId);
     },
   },
 
@@ -87,7 +102,13 @@ export const resolvers = {
     ) => {
       const { userId } = requireAuth(ctx);
       return changePassword(ctx.prisma, userId, currentPassword, newPassword);
-    }, 
+    },
+
+    /* ✅ ADDED MUTATION */
+    submitRating: async (_: unknown, { input }: { input: any }, ctx: Context) => {
+      const { userId } = requireAuth(ctx);
+      return submitRating(ctx.prisma, userId, input);
+    },
   },
 
   Subscription: {

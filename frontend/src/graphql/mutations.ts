@@ -110,3 +110,15 @@ export const CHANGE_PASSWORD_MUTATION = gql`
     changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
   }
 `;
+
+export const SUBMIT_RATING_MUTATION = gql`
+  mutation SubmitRating($input: SubmitRatingInput!) {
+    submitRating(input: $input) {
+      id
+      stars
+      comment
+      rater { id name }
+      rated { id name }
+    }
+  }
+`;

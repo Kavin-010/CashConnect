@@ -53,6 +53,30 @@ export const typeDefs = `#graphql
     roomId:    String!
   }
 
+  # ── ✅ ADDED RATING TYPES ──
+  type Rating {
+    id:        String!
+    stars:     Int!
+    comment:   String
+    createdAt: DateTime!
+    rater:     User!
+    rated:     User!
+    requestId: String!
+  }
+
+  type UserRatings {
+    ratings: [Rating!]!
+    average: Float!
+    total:   Int!
+  }
+
+  input SubmitRatingInput {
+    requestId: String!
+    stars:     Int!
+    comment:   String
+  }
+  # ─────────────────────────
+
   input SignupInput {
     email:      String!
     name:       String!
@@ -85,7 +109,9 @@ export const typeDefs = `#graphql
     request(id: String!): CashRequest
     chatRoom(requestId: String!): ChatRoom
     messages(roomId: String!): [Message!]!
-    myRequests: [CashRequest!]!    # ← NEW: requester sees their own requests
+    myRequests: [CashRequest!]!
+    userRatings(userId: String!):      UserRatings!
+    myRatingForRequest(requestId: String!): Rating
   }
 
   input UpdateProfileInput {
@@ -110,6 +136,7 @@ export const typeDefs = `#graphql
     cancelRequest(requestId: String!):      CashRequest!
 
     sendMessage(input: SendMessageInput!):  Message!
+    submitRating(input: SubmitRatingInput!): Rating!
   }
 
   type Subscription {

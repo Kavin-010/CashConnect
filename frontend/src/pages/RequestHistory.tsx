@@ -1,8 +1,11 @@
 // @ts-nocheck
+import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client/react";
 import { useNavigate } from "react-router-dom";
-import { MY_REQUESTS_QUERY } from "../graphql/queries";
+import { MY_REQUESTS_QUERY, MY_RATING_FOR_REQUEST_QUERY } from "../graphql/queries";
 import { COMPLETE_REQUEST_MUTATION, CANCEL_REQUEST_MUTATION } from "../graphql/mutations";
+import RatingModal from "../components/RatingModal";
+import { StarDisplay } from "../components/StarRating";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -18,7 +21,7 @@ function timeLeft(expiresAt) {
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (diff <= 0) return "Expired";
   const mins = Math.floor(diff / 60000);
-  const hrs = Math.floor(mins / 60);
+  const hrs  = Math.floor(mins / 60);
   if (hrs > 0) return `Expires in ${hrs}h ${mins % 60}m`;
   return `Expires in ${mins}m`;
 }
@@ -39,6 +42,10 @@ function statusBadge(status) {
 function RequestHistory() {
   const navigate = useNavigate();
 
+  // Rating modal state
+  const [ratingModal, setRatingModal] = useState(null);
+  // { requestId, ratedUser }
+
   const { data, loading, error, refetch } = useQuery(MY_REQUESTS_QUERY, {
     fetchPolicy: "network-only",
   });
@@ -51,10 +58,19 @@ function RequestHistory() {
     refetchQueries: [{ query: MY_REQUESTS_QUERY }],
   });
 
-  const handleComplete = async (requestId) => {
+  const handleComplete = async (req) => {
     if (!confirm("Mark this request as completed?")) return;
     try {
-      await completeMutation({ variables: { requestId } });
+      await completeMutation({ variables: { requestId: req.id } });
+      // After completing, prompt to rate the acceptor
+      if (req.acceptor) {
+        setTimeout(() => {
+          setRatingModal({
+            requestId: req.id,
+            ratedUser: req.acceptor.name,
+          });
+        }, 500);
+      }
     } catch (err) {
       alert(err.message ?? "Failed to complete");
     }
@@ -69,17 +85,22 @@ function RequestHistory() {
     }
   };
 
-  const allRequests = data?.myRequests ?? [];
-
-  const activeRequests  = allRequests.filter(
-    (r) => r.status === "OPEN" || r.status === "ACCEPTED"
-  );
-  const historyRequests = allRequests.filter(
-    (r) => !["OPEN", "ACCEPTED"].includes(r.status)
-  );
+  const allRequests     = data?.myRequests ?? [];
+  const activeRequests  = allRequests.filter(r => r.status === "OPEN" || r.status === "ACCEPTED");
+  const historyRequests = allRequests.filter(r => !["OPEN", "ACCEPTED"].includes(r.status));
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
+
+      {/* Rating Modal */}
+      {ratingModal && (
+        <RatingModal
+          requestId={ratingModal.requestId}
+          ratedUser={ratingModal.ratedUser}
+          onClose={() => setRatingModal(null)}
+          onSuccess={() => refetch()}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
@@ -120,10 +141,10 @@ function RequestHistory() {
           {/* ── Summary Stats ── */}
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
-              { label: "Total",     value: allRequests.length,                                         color: "text-white" },
-              { label: "Completed", value: allRequests.filter(r => r.status === "COMPLETED").length,   color: "text-green-400" },
-              { label: "Cancelled", value: allRequests.filter(r => r.status === "CANCELLED").length,   color: "text-red-400" },
-              { label: "Expired",   value: allRequests.filter(r => r.status === "EXPIRED").length,     color: "text-yellow-400" },
+              { label: "Total",     value: allRequests.length,                                       color: "text-white" },
+              { label: "Completed", value: allRequests.filter(r => r.status === "COMPLETED").length, color: "text-green-400" },
+              { label: "Cancelled", value: allRequests.filter(r => r.status === "CANCELLED").length, color: "text-red-400" },
+              { label: "Expired",   value: allRequests.filter(r => r.status === "EXPIRED").length,   color: "text-yellow-400" },
             ].map((stat) => (
               <div key={stat.label} className="bg-gray-800 rounded-xl p-4 text-center">
                 <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
@@ -149,6 +170,9 @@ function RequestHistory() {
                     navigate={navigate}
                     onComplete={handleComplete}
                     onCancel={handleCancel}
+                    onRate={(requestId, ratedUser) =>
+                      setRatingModal({ requestId, ratedUser })
+                    }
                   />
                 ))}
               </div>
@@ -180,6 +204,9 @@ function RequestHistory() {
                     navigate={navigate}
                     onComplete={handleComplete}
                     onCancel={handleCancel}
+                    onRate={(requestId, ratedUser) =>
+                      setRatingModal({ requestId, ratedUser })
+                    }
                   />
                 ))}
               </div>
@@ -193,7 +220,16 @@ function RequestHistory() {
 
 // ── Request Card ──────────────────────────────────────────────────────────────
 
-function RequestCard({ req, navigate, onComplete, onCancel }) {
+function RequestCard({ req, navigate, onComplete, onCancel, onRate }) {
+
+  // Check if user has already rated this request
+  const { data: ratingData } = useQuery(MY_RATING_FOR_REQUEST_QUERY, {
+    variables: { requestId: req.id },
+    skip: req.status !== "COMPLETED",
+  });
+
+  const alreadyRated = !!ratingData?.myRatingForRequest;
+
   return (
     <div className="bg-gray-800 p-4 rounded-xl">
       <div className="flex justify-between items-start">
@@ -222,7 +258,7 @@ function RequestCard({ req, navigate, onComplete, onCancel }) {
             Posted: {formatDate(req.createdAt)}
           </p>
 
-          {/* Expiry — only for OPEN */}
+          {/* Expiry */}
           {req.expiresAt && req.status === "OPEN" && (
             <p className="text-xs text-yellow-400 mt-1">
               {timeLeft(req.expiresAt)}
@@ -239,12 +275,25 @@ function RequestCard({ req, navigate, onComplete, onCancel }) {
               <span className="text-gray-500"> ({req.acceptor.rollNumber})</span>
             </p>
           )}
+
+          {/* Already rated badge */}
+          {req.status === "COMPLETED" && alreadyRated && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="text-yellow-400 text-xs">★</span>
+              <span className="text-gray-400 text-xs">
+                You rated {ratingData.myRatingForRequest.stars}/5
+                {ratingData.myRatingForRequest.comment && (
+                  <> — "{ratingData.myRatingForRequest.comment}"</>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2 ml-4">
 
-          {/* Open Chat — for ACCEPTED with chatRoom */}
+          {/* Open Chat */}
           {req.status === "ACCEPTED" && req.chatRoom && (
             <button
               onClick={() => navigate(`/chat/${req.id}`)}
@@ -254,17 +303,27 @@ function RequestCard({ req, navigate, onComplete, onCancel }) {
             </button>
           )}
 
-          {/* Mark Done — only for ACCEPTED */}
+          {/* Mark Done */}
           {req.status === "ACCEPTED" && (
             <button
-              onClick={() => onComplete(req.id)}
+              onClick={() => onComplete(req)}
               className="bg-green-700 hover:bg-green-600 px-3 py-1 rounded text-sm"
             >
               Mark Done ✓
             </button>
           )}
 
-          {/* Cancel — for OPEN or ACCEPTED */}
+          {/* Rate button — show only if completed and not yet rated */}
+          {req.status === "COMPLETED" && req.acceptor && !alreadyRated && (
+            <button
+              onClick={() => onRate(req.id, req.acceptor.name)}
+              className="bg-yellow-600 hover:bg-yellow-500 px-3 py-1 rounded text-sm"
+            >
+              ★ Rate
+            </button>
+          )}
+
+          {/* Cancel */}
           {["OPEN", "ACCEPTED"].includes(req.status) && (
             <button
               onClick={() => onCancel(req.id)}

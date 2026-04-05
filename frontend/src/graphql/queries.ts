@@ -76,3 +76,29 @@ export const CHAT_ROOM_QUERY = gql`
     }
   }
 `;
+
+export const USER_RATINGS_QUERY = gql`
+  query UserRatings($userId: String!) {
+    userRatings(userId: $userId) {
+      average
+      total
+      ratings {
+        id
+        stars
+        comment
+        createdAt
+        rater { id name rollNumber }
+      }
+    }
+  }
+`;
+
+export const MY_RATING_FOR_REQUEST_QUERY = gql`
+  query MyRatingForRequest($requestId: String!) {
+    myRatingForRequest(requestId: $requestId) {
+      id
+      stars
+      comment
+    }
+  }
+`;

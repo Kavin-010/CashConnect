@@ -2,13 +2,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useSubscription } from "@apollo/client/react";
 import { useNavigate } from "react-router-dom";
-import { ME_QUERY, OPEN_REQUESTS_QUERY, MY_REQUESTS_QUERY } from "../graphql/queries";
+import { ME_QUERY, OPEN_REQUESTS_QUERY, MY_REQUESTS_QUERY, USER_RATINGS_QUERY } from "../graphql/queries";
 import {
   POST_REQUEST_MUTATION,
   ACCEPT_REQUEST_MUTATION,
 } from "../graphql/mutations";
 import { REQUEST_STATUS_CHANGED_SUBSCRIPTION } from "../graphql/subscriptions";
 import { clearToken } from "../lib/apolloClient";
+import { StarDisplay } from "../components/StarRating";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString("en-IN", {
@@ -22,10 +25,12 @@ function timeLeft(expiresAt) {
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (diff <= 0) return "Expired";
   const mins = Math.floor(diff / 60000);
-  const hrs = Math.floor(mins / 60);
+  const hrs  = Math.floor(mins / 60);
   if (hrs > 0) return `Expires in ${hrs}h ${mins % 60}m`;
   return `Expires in ${mins}m`;
 }
+
+// ── Notification Banner ───────────────────────────────────────────────────────
 
 function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
   if (notifications.length === 0) return null;
@@ -59,6 +64,8 @@ function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
   );
 }
 
+// ── Request Subscriber ────────────────────────────────────────────────────────
+
 function RequestSubscriber({ requestId, onStatusChange }) {
   useSubscription(REQUEST_STATUS_CHANGED_SUBSCRIPTION, {
     variables: { requestId },
@@ -71,6 +78,72 @@ function RequestSubscriber({ requestId, onStatusChange }) {
   return null;
 }
 
+// ── Open Request Card with Rating ─────────────────────────────────────────────
+
+function OpenRequestCard({ req, onAccept, acceptLoading }) {
+  const { data: ratingData } = useQuery(USER_RATINGS_QUERY, {
+    variables: { userId: req.requester.id },
+  });
+
+  const ratings = ratingData?.userRatings;
+
+  return (
+    <div className="bg-gray-800 p-4 rounded-xl flex justify-between items-start">
+      <div className="flex-1">
+        <p className="font-semibold">₹{req.amount}</p>
+        <p className="text-sm text-gray-400 mt-0.5">{req.reason}</p>
+
+        {/* Location */}
+        {req.location && (
+          <p className="text-xs text-indigo-300 mt-1">
+            📍 {req.location}
+          </p>
+        )}
+
+        {/* Requester info + rating */}
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <p className="text-xs text-gray-500">
+            By {req.requester.name} ({req.requester.rollNumber})
+            {req.requester.department && ` · ${req.requester.department}`}
+          </p>
+        </div>
+
+        {/* Star rating of requester */}
+        {ratings && (
+          <div className="mt-1">
+            <StarDisplay
+              average={ratings.average}
+              total={ratings.total}
+              size="sm"
+            />
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500 mt-1">
+          Posted: {formatDate(req.createdAt)}
+        </p>
+
+        {/* Expiry */}
+        {req.expiresAt && (
+          <p className="text-xs text-yellow-400 mt-1">
+            {timeLeft(req.expiresAt)}
+          </p>
+        )}
+      </div>
+
+      <button
+        onClick={() => onAccept(req.id)}
+        disabled={acceptLoading}
+        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-50 ml-4 mt-1 text-sm"
+      >
+        Accept
+      </button>
+    </div>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
 function Dashboard() {
   const navigate = useNavigate();
 
@@ -79,10 +152,9 @@ function Dashboard() {
 
   const [notifications, setNotifications] = useState([]);
 
-  const {
-    data: myData,
-    refetch: refetchMy,
-  } = useQuery(MY_REQUESTS_QUERY, { fetchPolicy: "network-only" });
+  const { data: myData, refetch: refetchMy } = useQuery(MY_REQUESTS_QUERY, {
+    fetchPolicy: "network-only",
+  });
 
   const myActiveRequests = (myData?.myRequests ?? []).filter(
     (r) => r.status === "OPEN" || r.status === "ACCEPTED"
@@ -118,10 +190,10 @@ function Dashboard() {
     refetch: refetchOpen,
   } = useQuery(OPEN_REQUESTS_QUERY, { fetchPolicy: "network-only" });
 
-  const [amount, setAmount]           = useState("");
-  const [reason, setReason]           = useState("");
-  const [location, setLocation]       = useState("");
-  const [expiryMins, setExpiryMins]   = useState("60");
+  const [amount,     setAmount]     = useState("");
+  const [reason,     setReason]     = useState("");
+  const [location,   setLocation]   = useState("");
+  const [expiryMins, setExpiryMins] = useState("60");
 
   const [postMutation, { loading: postLoading }] = useMutation(POST_REQUEST_MUTATION, {
     refetchQueries: [{ query: OPEN_REQUESTS_QUERY }, { query: MY_REQUESTS_QUERY }],
@@ -188,6 +260,7 @@ function Dashboard() {
         />
       ))}
 
+      {/* Header */}
       <div className="flex justify-between items-center mb-1">
         <h1 className="text-2xl font-bold">CampusCash Dashboard 💸</h1>
         <div className="flex items-center gap-3">
@@ -205,13 +278,13 @@ function Dashboard() {
           </button>
         </div>
       </div>
-
       <p className="text-gray-400 mb-6">
         Logged in as:{" "}
         <span className="text-white font-medium">{currentUser?.name}</span>{" "}
         ({currentUser?.email})
       </p>
 
+      {/* My Requests History Button */}
       <button
         onClick={() => navigate("/history")}
         className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl mb-6 transition-colors"
@@ -233,6 +306,7 @@ function Dashboard() {
         <span className="text-gray-400 text-lg">→</span>
       </button>
 
+      {/* Post Request */}
       <div className="bg-gray-800 p-4 rounded-xl mb-6">
         <h2 className="mb-3 font-semibold">Post Cash Request</h2>
 
@@ -243,7 +317,6 @@ function Dashboard() {
           onChange={(e) => setAmount(e.target.value)}
           className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
         />
-
         <input
           type="text"
           placeholder="Reason (e.g. Need cash for canteen)"
@@ -251,19 +324,16 @@ function Dashboard() {
           onChange={(e) => setReason(e.target.value)}
           className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
         />
-
         <input
           type="text"
-          placeholder="📍 Location (e.g. Canteen Block A, Main Library, Xerox Shop)"
+          placeholder="📍 Location (e.g. Canteen Block A, Main Library)"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
         />
 
         <div className="flex items-center gap-3 mb-3">
-          <label className="text-gray-400 text-sm whitespace-nowrap">
-            Visible for:
-          </label>
+          <label className="text-gray-400 text-sm whitespace-nowrap">Visible for:</label>
           <select
             value={expiryMins}
             onChange={(e) => setExpiryMins(e.target.value)}
@@ -289,6 +359,7 @@ function Dashboard() {
         </button>
       </div>
 
+      {/* Active Requests from others */}
       <div>
         <div className="flex justify-between items-center mb-3">
           <h2 className="font-semibold">Active Requests</h2>
@@ -300,9 +371,7 @@ function Dashboard() {
           </button>
         </div>
 
-        {openError && (
-          <p className="text-red-400 mb-3">{openError.message}</p>
-        )}
+        {openError && <p className="text-red-400 mb-3">{openError.message}</p>}
 
         {openLoading && (openData?.openRequests ?? []).length === 0 ? (
           <p className="text-gray-400">Loading...</p>
@@ -311,43 +380,12 @@ function Dashboard() {
         ) : (
           <div className="space-y-3">
             {(openData?.openRequests ?? []).map((req) => (
-              <div
+              <OpenRequestCard
                 key={req.id}
-                className="bg-gray-800 p-4 rounded-xl flex justify-between items-start"
-              >
-                <div className="flex-1">
-                  <p className="font-semibold">₹{req.amount}</p>
-                  <p className="text-sm text-gray-400 mt-0.5">{req.reason}</p>
-
-                  {req.location && (
-                    <p className="text-xs text-indigo-300 mt-1">
-                      📍 {req.location}
-                    </p>
-                  )}
-
-                  <p className="text-xs text-gray-500 mt-1">
-                    By {req.requester.name} ({req.requester.rollNumber})
-                    {req.requester.department && ` · ${req.requester.department}`}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Posted: {formatDate(req.createdAt)}
-                  </p>
-
-                  {req.expiresAt && (
-                    <p className="text-xs text-yellow-400 mt-1">
-                      {timeLeft(req.expiresAt)}
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => handleAccept(req.id)}
-                  disabled={acceptLoading}
-                  className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-50 ml-4 mt-1 text-sm"
-                >
-                  Accept
-                </button>
-              </div>
+                req={req}
+                onAccept={handleAccept}
+                acceptLoading={acceptLoading}
+              />
             ))}
           </div>
         )}

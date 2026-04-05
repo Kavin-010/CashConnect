@@ -23,7 +23,8 @@ model User {
   acceptedRequests CashRequest[] @relation("acceptor")
   sentMessages     Message[]     @relation("sender")
   otpTokens        OtpToken[]
-
+  ratingsGiven     Rating[]      @relation("rater")
+  ratingsReceived  Rating[]      @relation("rated")
   @@index([email])
   @@map("users")
 }
@@ -45,6 +46,8 @@ model CashRequest {
   acceptor   User?   @relation("acceptor", fields: [acceptorId], references: [id])
 
   chatRoom ChatRoom?
+  ratings  Rating[]
+
 
   @@index([status])
   @@index([requesterId])
@@ -104,4 +107,24 @@ model OtpToken {
 enum OtpPurpose {
   PASSWORD_RESET
   EMAIL_VERIFY
+}
+
+model Rating {
+  id        String   @id @default(uuid())
+  stars     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  raterId   String
+  rater     User   @relation("rater",   fields: [raterId],   references: [id])
+
+  ratedId   String
+  rated     User   @relation("rated",   fields: [ratedId],   references: [id])
+
+  requestId String
+  request   CashRequest @relation(fields: [requestId], references: [id])
+
+  @@unique([raterId, requestId])
+  @@index([ratedId])
+  @@map("ratings")
 }
