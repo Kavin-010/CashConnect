@@ -1,48 +1,88 @@
 // @ts-nocheck
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
+import { useMutation } from "@apollo/client/react";
+import { LOGIN_MUTATION } from "../graphql/mutations";
+import { saveToken } from "../lib/apolloClient";
 
-function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function Login() {
   const navigate = useNavigate();
-  const { login, loading, loginError } = useAuth();
+  const [email,  setEmail]  = useState("");
+  const [pass,   setPass]   = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  const [loginMutation, { loading, error }] = useMutation(LOGIN_MUTATION);
 
   const handleLogin = async () => {
-    const regex = /^[0-9]{2}[a-z]{2}[0-9]{2}@psgtech\.ac\.in$/;
-    if (!regex.test(email)) { alert("Enter valid PSG Tech ID"); return; }
-    if (!password) { alert("Enter password"); return; }
+    const regex = /^[0-9]{2}[a-z]{2}[0-9]{2}@psgtech\.ac\.in$/i;
+    if (!regex.test(email)) { alert("Enter a valid PSG Tech email"); return; }
+    if (!pass)               { alert("Enter your password"); return; }
     try {
-      await login({ email, password });
-    } catch (err: any) {
-      alert(err.message ?? "Login failed");
+      const { data } = await loginMutation({
+        variables: { input: { email: email.toLowerCase(), password: pass } },
+      });
+      if (data?.login?.token) {
+        saveToken(data.login.token);
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      if (err.message === "EMAIL_NOT_VERIFIED") {
+        navigate("/verify-email", { state: { email: email.toLowerCase() } });
+      }
     }
   };
 
+  const isLocked = error?.message?.includes("locked");
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-gray-900 to-black">
-      <div className="w-full max-w-md bg-gray-900/80 backdrop-blur-lg border border-gray-700 rounded-3xl p-8 shadow-2xl">
-        <h2 className="text-3xl font-bold text-white text-center mb-2">CampusCash Connect 🚀</h2>
-        <p className="text-gray-400 text-center mb-6">Sign in with your PSG Tech account</p>
-        {loginError && <p className="text-red-400 text-sm text-center mb-4">{loginError.message}</p>}
-        <input type="email" placeholder="student_id@psgtech.ac.in" value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full p-3 mb-4 rounded-xl bg-gray-800 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-        <input type="password" placeholder="Enter password" value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-3 mb-4 rounded-xl bg-gray-800 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
-        <button onClick={handleLogin} disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-semibold disabled:opacity-50">
-          {loading ? "Signing in..." : "Sign In"}
+    <div style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24 }}>
+
+      <div style={{ textAlign:"center", marginBottom:40 }}>
+        <div style={{ display:"inline-flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:"var(--accent)" }} />
+          <span style={{ fontFamily:"var(--font-head)", fontSize:12, letterSpacing:4, color:"var(--muted)", textTransform:"uppercase" }}>PSG Tech</span>
+        </div>
+        <h1 style={{ fontFamily:"var(--font-head)", fontSize:56, lineHeight:0.95, color:"var(--white)", letterSpacing:3 }}>CAMPUS</h1>
+        <h1 style={{ fontFamily:"var(--font-head)", fontSize:56, lineHeight:0.95, color:"var(--accent)", letterSpacing:3 }}>CASH</h1>
+        <p style={{ color:"var(--muted)", fontSize:13, marginTop:10 }}>Campus cash sharing, made simple</p>
+      </div>
+
+      <div className="card" style={{ width:"100%", maxWidth:400, padding:28 }}>
+
+        {error && !error.message.includes("EMAIL_NOT_VERIFIED") && (
+          <div style={{ background: isLocked ? "rgba(255,68,68,0.1)" : "rgba(0,196,140,0.1)", border:`1px solid ${isLocked ? "var(--danger)" : "var(--accent)"}`, borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:13, color: isLocked ? "var(--danger)" : "var(--accent2)", textAlign:"center" }}>
+            {isLocked && "🔒 "}{error.message}
+          </div>
+        )}
+
+        <div style={{ marginBottom:14 }}>
+          <label style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:"var(--muted)", textTransform:"uppercase", display:"block", marginBottom:8 }}>PSG Email</label>
+          <input className="inp" type="email" placeholder="23pc21@psgtech.ac.in" value={email} onChange={e => setEmail(e.target.value)} />
+        </div>
+
+        <div style={{ marginBottom:24 }}>
+          <label style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:"var(--muted)", textTransform:"uppercase", display:"block", marginBottom:8 }}>Password</label>
+          <div style={{ position:"relative" }}>
+            <input className="inp" type={showPw?"text":"password"} placeholder="Enter password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{ paddingRight:60 }} />
+            <button onClick={()=>setShowPw(!showPw)} style={{ position:"absolute", right:16, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"var(--muted)", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"var(--font-body)" }}>
+              {showPw?"HIDE":"SHOW"}
+            </button>
+          </div>
+        </div>
+
+        <button className="btn-accent" onClick={handleLogin} disabled={loading||isLocked} style={{ width:"100%", padding:15, fontSize:14, fontWeight:700, letterSpacing:1, marginBottom:16 }}>
+          {loading?"SIGNING IN...":isLocked?"ACCOUNT LOCKED":"SIGN IN"}
         </button>
-        <div className="flex justify-between mt-4 text-sm text-gray-400">
-          <span onClick={() => navigate("/forgot-password")} className="hover:text-white cursor-pointer">Forgot password?</span>
-          <span onClick={() => navigate("/signup")} className="hover:text-white cursor-pointer">Create account</span>
+
+        <div style={{ display:"flex", justifyContent:"space-between" }}>
+          <button onClick={()=>navigate("/forgot-password")} style={{ background:"none", border:"none", color:"var(--muted)", fontSize:13, cursor:"pointer", fontFamily:"var(--font-body)" }}>
+            Forgot password?
+          </button>
+          <button onClick={()=>navigate("/signup")} style={{ background:"none", border:"none", color:"var(--accent)", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"var(--font-body)" }}>
+            Create account →
+          </button>
         </div>
       </div>
     </div>
   );
 }
-
-export default Login;

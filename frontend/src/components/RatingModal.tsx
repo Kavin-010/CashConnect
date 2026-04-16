@@ -3,9 +3,24 @@ import { useState } from "react";
 import { useMutation } from "@apollo/client/react";
 import { SUBMIT_RATING_MUTATION } from "../graphql/mutations";
 import { MY_REQUESTS_QUERY } from "../graphql/queries";
-import { StarPicker } from "./StarRating";
 
-function RatingModal({ requestId, ratedUser, onClose, onSuccess }) {
+const LABELS = { 1:"Poor", 2:"Fair", 3:"Good", 4:"Very Good", 5:"Excellent!" };
+
+function StarPicker({ value, onChange }) {
+  const [hovered, setHovered] = useState(0);
+  return (
+    <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
+      {[1,2,3,4,5].map(star => (
+        <button key={star} type="button" onClick={()=>onChange(star)} onMouseEnter={()=>setHovered(star)} onMouseLeave={()=>setHovered(0)}
+          style={{ background:"none", border:"none", cursor:"pointer", fontSize:38, color: star<=(hovered||value) ? "var(--warning)" : "var(--border)", transition:"color 0.15s, transform 0.1s", transform: star===(hovered||value) ? "scale(1.2)" : "scale(1)" }}>
+          ★
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function RatingModal({ requestId, ratedUser, onClose, onSuccess }) {
   const [stars,   setStars]   = useState(0);
   const [comment, setComment] = useState("");
 
@@ -14,86 +29,47 @@ function RatingModal({ requestId, ratedUser, onClose, onSuccess }) {
   });
 
   const handleSubmit = async () => {
-    if (stars === 0) { alert("Please select a star rating"); return; }
+    if (!stars) { alert("Select a star rating"); return; }
     try {
-      await submitRating({
-        variables: {
-          input: {
-            requestId,
-            stars,
-            comment: comment.trim() || undefined,
-          },
-        },
-      });
-      onSuccess();
-      onClose();
-    } catch (err) {
-      alert(err.message ?? "Failed to submit rating");
-    }
+      await submitRating({ variables: { input: { requestId, stars, comment: comment.trim()||undefined } } });
+      onSuccess(); onClose();
+    } catch (err) { alert(err.message ?? "Failed to submit rating"); }
   };
 
   return (
-    // Backdrop
-    <div
-      className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.9)", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center", padding:16 }}
+      onClick={e => e.target===e.currentTarget && onClose()}>
 
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-white">Rate {ratedUser}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl leading-none"
-          >
-            ×
-          </button>
-        </div>
+      <div className="card" style={{ width:"100%", maxWidth:420, padding:28, borderRadius:24, border:"1px solid var(--border)" }}>
+        <div style={{ width:36, height:4, background:"var(--border)", borderRadius:2, margin:"0 auto 20px" }} />
 
-        {/* Stars */}
-        <div className="flex flex-col items-center gap-3 mb-5">
-          <p className="text-gray-400 text-sm">How was your experience?</p>
-          <StarPicker value={stars} onChange={setStars} />
-          <p className="text-yellow-400 text-sm font-medium h-5">
-            {stars === 1 && "Poor"}
-            {stars === 2 && "Fair"}
-            {stars === 3 && "Good"}
-            {stars === 4 && "Very Good"}
-            {stars === 5 && "Excellent!"}
-          </p>
-        </div>
+        <p style={{ fontFamily:"var(--font-head)", fontSize:24, letterSpacing:1, color:"var(--white)", textAlign:"center", marginBottom:4 }}>
+          RATE {ratedUser.toUpperCase()}
+        </p>
+        <p style={{ color:"var(--muted)", fontSize:13, textAlign:"center", marginBottom:20 }}>How was your experience?</p>
 
-        {/* Comment */}
+        <StarPicker value={stars} onChange={setStars} />
+
+        <p style={{ textAlign:"center", height:20, margin:"8px 0 16px", fontWeight:700, fontSize:13, color:"var(--warning)", letterSpacing:0.5 }}>
+          {LABELS[stars] ?? ""}
+        </p>
+
         <textarea
           value={comment}
-          onChange={(e) => setComment(e.target.value)}
+          onChange={e=>setComment(e.target.value)}
           placeholder="Leave a comment (optional)"
           maxLength={300}
           rows={3}
-          className="w-full p-3 rounded-lg bg-gray-700 text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none mb-4"
+          style={{ background:"var(--card2)", border:"1.5px solid var(--border)", borderRadius:14, color:"var(--white)", fontFamily:"var(--font-body)", fontSize:14, padding:"12px 16px", width:"100%", outline:"none", resize:"none", marginBottom:20 }}
         />
 
-        {/* Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 text-sm"
-          >
-            Skip
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading || stars === 0}
-            className="flex-1 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm disabled:opacity-50"
-          >
-            {loading ? "Submitting..." : "Submit Rating"}
+        <div style={{ display:"flex", gap:10 }}>
+          <button className="btn-ghost" onClick={onClose} style={{ flex:1, padding:14, fontSize:12, fontWeight:700 }}>SKIP</button>
+          <button className="btn-accent" onClick={handleSubmit} disabled={loading||!stars} style={{ flex:2, padding:14, fontSize:12, fontWeight:700, letterSpacing:0.5 }}>
+            {loading?"SUBMITTING...":"SUBMIT RATING"}
           </button>
         </div>
-
       </div>
     </div>
   );
 }
-
-export default RatingModal;

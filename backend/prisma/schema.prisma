@@ -8,16 +8,18 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  rollNumber   String   @unique
-  department   String?
-  year         Int?
-  isVerified   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String
+  passwordHash    String
+  rollNumber      String    @unique
+  department      String?
+  year            Int?
+  isVerified      Boolean   @default(false)
+  loginAttempts   Int       @default(0)
+  lockedUntil     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   sentRequests     CashRequest[] @relation("requester")
   acceptedRequests CashRequest[] @relation("acceptor")
@@ -25,6 +27,7 @@ model User {
   otpTokens        OtpToken[]
   ratingsGiven     Rating[]      @relation("rater")
   ratingsReceived  Rating[]      @relation("rated")
+
   @@index([email])
   @@map("users")
 }

@@ -1,22 +1,25 @@
 import { withFilter } from "graphql-subscriptions";
 import { requireAuth } from "../middleware/auth";
-import { generateAndSendOtp, verifyOtp, resetPassword } from "../services/otpService";
+import {
+  signup, login, verifyEmail,
+  resendVerificationOtp, updateProfile, changePassword,
+} from "../services/authService";
+import {
+  generateAndSendOtp, verifyOtp, resetPassword,
+} from "../services/otpService";
 import {
   getOpenRequests, getMyRequests, postRequest,
   acceptRequest, completeRequest, cancelRequest,
 } from "../services/requestService";
 import { getChatRoom, getMessages, sendMessage } from "../services/chatService";
+import { submitRating, getUserRatings, getMyRatingForRequest } from "../services/ratingService";
 import { EVENTS } from "./pubsub";
 import type { PrismaClient } from "@prisma/client";
 import type { PubSub } from "graphql-subscriptions";
 import type { JwtPayload } from "../middleware/auth";
-import { signup, login, updateProfile, changePassword } from "../services/authService";
-
-/* ✅ ADDED IMPORT */
-import { submitRating, getUserRatings, getMyRatingForRequest } from "../services/ratingService";
 
 interface Context {
-  user: JwtPayload | null;
+  user:   JwtPayload | null;
   prisma: PrismaClient;
   pubsub: PubSub;
 }
@@ -50,14 +53,10 @@ export const resolvers = {
       const { userId } = requireAuth(ctx);
       return getMessages(ctx.prisma, roomId, userId);
     },
-
-    /* ✅ ADDED QUERY */
     userRatings: async (_: unknown, { userId }: { userId: string }, ctx: Context) => {
       requireAuth(ctx);
       return getUserRatings(ctx.prisma, userId);
     },
-
-    /* ✅ ADDED QUERY */
     myRatingForRequest: async (_: unknown, { requestId }: { requestId: string }, ctx: Context) => {
       const { userId } = requireAuth(ctx);
       return getMyRatingForRequest(ctx.prisma, userId, requestId);
@@ -65,12 +64,67 @@ export const resolvers = {
   },
 
   Mutation: {
-    signup: async (_: unknown, { input }: { input: any }, ctx: Context) => signup(ctx.prisma, input),
-    login: async (_: unknown, { input }: { input: any }, ctx: Context) => login(ctx.prisma, input),
-    forgotPassword: async (_: unknown, { email }: { email: string }, ctx: Context) => generateAndSendOtp(ctx.prisma, email),
-    verifyOtp: async (_: unknown, { email, code }: { email: string; code: string }, ctx: Context) => verifyOtp(ctx.prisma, email, code),
-    resetPassword: async (_: unknown, { token, newPassword }: { token: string; newPassword: string }, ctx: Context) => resetPassword(ctx.prisma, token, newPassword),
+    // ── Auth ────────────────────────────────────────────────────────────────
+    signup: async (_: unknown, { input }: { input: any }, ctx: Context) => {
+      const result = await signup(ctx.prisma, input);
+      return {
+        email:             result.user.email,
+        needsVerification: false,       // ✅ always false now
+        token:             result.token, // ✅ return token so frontend can login immediately
+      };
+    },
+    verifyEmail: async (
+      _: unknown,
+      { email, code }: { email: string; code: string },
+      ctx: Context
+    ) => {
+      return verifyEmail(ctx.prisma, email, code);
+    },
+    resendVerification: async (
+      _: unknown,
+      { email }: { email: string },
+      ctx: Context
+    ) => {
+      return resendVerificationOtp(ctx.prisma, email);
+    },
+    login: async (_: unknown, { input }: { input: any }, ctx: Context) => {
+      return login(ctx.prisma, input);
+    },
 
+    // ── Password reset ───────────────────────────────────────────────────────
+    forgotPassword: async (_: unknown, { email }: { email: string }, ctx: Context) => {
+      return generateAndSendOtp(ctx.prisma, email, "PASSWORD_RESET");
+    },
+    verifyOtp: async (
+      _: unknown,
+      { email, code }: { email: string; code: string },
+      ctx: Context
+    ) => {
+      return verifyOtp(ctx.prisma, email, code);
+    },
+    resetPassword: async (
+      _: unknown,
+      { token, newPassword }: { token: string; newPassword: string },
+      ctx: Context
+    ) => {
+      return resetPassword(ctx.prisma, token, newPassword);
+    },
+
+    // ── Profile ──────────────────────────────────────────────────────────────
+    updateProfile: async (_: unknown, { input }: { input: any }, ctx: Context) => {
+      const { userId } = requireAuth(ctx);
+      return updateProfile(ctx.prisma, userId, input);
+    },
+    changePassword: async (
+      _: unknown,
+      { currentPassword, newPassword }: { currentPassword: string; newPassword: string },
+      ctx: Context
+    ) => {
+      const { userId } = requireAuth(ctx);
+      return changePassword(ctx.prisma, userId, currentPassword, newPassword);
+    },
+
+    // ── Requests ─────────────────────────────────────────────────────────────
     postRequest: async (_: unknown, { input }: { input: any }, ctx: Context) => {
       const { userId } = requireAuth(ctx);
       return postRequest(ctx.prisma, userId, input);
@@ -87,24 +141,14 @@ export const resolvers = {
       const { userId } = requireAuth(ctx);
       return cancelRequest(ctx.prisma, requestId, userId);
     },
+
+    // ── Chat ─────────────────────────────────────────────────────────────────
     sendMessage: async (_: unknown, { input }: { input: any }, ctx: Context) => {
       const { userId } = requireAuth(ctx);
       return sendMessage(ctx.prisma, userId, input);
     },
-    updateProfile: async (_: unknown, { input }: { input: any }, ctx: Context) => {
-      const { userId } = requireAuth(ctx);
-      return updateProfile(ctx.prisma, userId, input);
-    },
-    changePassword: async (
-      _: unknown,
-      { currentPassword, newPassword }: { currentPassword: string; newPassword: string },
-      ctx: Context
-    ) => {
-      const { userId } = requireAuth(ctx);
-      return changePassword(ctx.prisma, userId, currentPassword, newPassword);
-    },
 
-    /* ✅ ADDED MUTATION */
+    // ── Ratings ──────────────────────────────────────────────────────────────
     submitRating: async (_: unknown, { input }: { input: any }, ctx: Context) => {
       const { userId } = requireAuth(ctx);
       return submitRating(ctx.prisma, userId, input);
@@ -128,8 +172,10 @@ export const resolvers = {
           requireAuth(ctx);
           return ctx.pubsub.asyncIterator([EVENTS.REQUEST_STATUS_CHANGED]);
         },
-        (payload: { requestStatusChanged: { id: string } }, variables: { requestId: string }) =>
-          payload.requestStatusChanged.id === variables.requestId
+        (
+          payload: { requestStatusChanged: { id: string } },
+          variables: { requestId: string }
+        ) => payload.requestStatusChanged.id === variables.requestId
       ),
     },
   },

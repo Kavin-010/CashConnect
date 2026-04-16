@@ -1,0 +1,75 @@
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: campuscash_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: campuscash_pass
+      POSTGRES_DB: campuscash
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - campuscash_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d campuscash"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: campuscash_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:campuscash_pass@db:5432/campuscash
+      PORT: 4000
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      EMAIL_FROM: ${EMAIL_FROM}
+      OTP_EXPIRES_MINUTES: 10
+      FRONTEND_URL: http://localhost
+    ports:
+      - "4000:4000"
+    networks:
+      - campuscash_net
+    dns:                  # ✅ Fix slow email DNS resolution
+      - 8.8.8.8
+      - 8.8.4.4
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /graphql          # ✅ Relative - nginx proxies this
+        VITE_WS_URL: ws://localhost/graphql  # ✅ Browser-accessible
+    container_name: campuscash_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - campuscash_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  campuscash_net:
+    driver: bridge

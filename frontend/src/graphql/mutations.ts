@@ -3,9 +3,24 @@ import { gql } from "@apollo/client";
 export const SIGNUP_MUTATION = gql`
   mutation Signup($input: SignupInput!) {
     signup(input: $input) {
+      needsVerification
+      email
+    }
+  }
+`;
+
+export const VERIFY_EMAIL_MUTATION = gql`
+  mutation VerifyEmail($email: String!, $code: String!) {
+    verifyEmail(email: $email, code: $code) {
       token
       user { id email name rollNumber }
     }
+  }
+`;
+
+export const RESEND_VERIFICATION_MUTATION = gql`
+  mutation ResendVerification($email: String!) {
+    resendVerification(email: $email)
   }
 `;
 

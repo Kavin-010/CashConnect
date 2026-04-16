@@ -18,6 +18,12 @@ export const typeDefs = `#graphql
     user:  User!
   }
 
+  type SignupPayload {
+    needsVerification: Boolean!
+    email:             String!
+    token:             String
+  }
+
   enum RequestStatus {
     OPEN
     ACCEPTED
@@ -30,7 +36,7 @@ export const typeDefs = `#graphql
     id:        String!
     amount:    Float!
     reason:    String!
-    location:  String        # ← NEW
+    location:  String
     status:    RequestStatus!
     expiresAt: DateTime
     createdAt: DateTime!
@@ -53,7 +59,6 @@ export const typeDefs = `#graphql
     roomId:    String!
   }
 
-  # ── ✅ ADDED RATING TYPES ──
   type Rating {
     id:        String!
     stars:     Int!
@@ -70,13 +75,6 @@ export const typeDefs = `#graphql
     total:   Int!
   }
 
-  input SubmitRatingInput {
-    requestId: String!
-    stars:     Int!
-    comment:   String
-  }
-  # ─────────────────────────
-
   input SignupInput {
     email:      String!
     name:       String!
@@ -91,10 +89,16 @@ export const typeDefs = `#graphql
     password: String!
   }
 
+  input UpdateProfileInput {
+    name:       String
+    department: String
+    year:       Int
+  }
+
   input PostRequestInput {
     amount:           Float!
     reason:           String!
-    location:         String   # ← NEW
+    location:         String
     expiresInMinutes: Int
   }
 
@@ -103,40 +107,50 @@ export const typeDefs = `#graphql
     content: String!
   }
 
+  input SubmitRatingInput {
+    requestId: String!
+    stars:     Int!
+    comment:   String
+  }
+
   type Query {
     me:           User!
     openRequests: [CashRequest!]!
-    request(id: String!): CashRequest
-    chatRoom(requestId: String!): ChatRoom
-    messages(roomId: String!): [Message!]!
-    myRequests: [CashRequest!]!
-    userRatings(userId: String!):      UserRatings!
+    myRequests:   [CashRequest!]!
+    request(id: String!):           CashRequest
+    chatRoom(requestId: String!):   ChatRoom
+    messages(roomId: String!):      [Message!]!
+    userRatings(userId: String!):   UserRatings!
     myRatingForRequest(requestId: String!): Rating
   }
 
-  input UpdateProfileInput {
-  name:       String
-  department: String
-  year:       Int
-  }
-  
   type Mutation {
-    signup(input: SignupInput!):  AuthPayload!
-    login(input: LoginInput!):   AuthPayload!
+    # Auth
+    signup(input: SignupInput!):                          SignupPayload!
+    verifyEmail(email: String!, code: String!):           AuthPayload!
+    resendVerification(email: String!):                   Boolean!
+    login(input: LoginInput!):                            AuthPayload!
 
-    forgotPassword(email: String!):                      Boolean!
-    verifyOtp(email: String!, code: String!):            String!
-    resetPassword(token: String!, newPassword: String!): Boolean!
-    updateProfile(input: UpdateProfileInput!): User!
+    # Password reset
+    forgotPassword(email: String!):                       Boolean!
+    verifyOtp(email: String!, code: String!):             String!
+    resetPassword(token: String!, newPassword: String!):  Boolean!
+
+    # Profile
+    updateProfile(input: UpdateProfileInput!):            User!
     changePassword(currentPassword: String!, newPassword: String!): Boolean!
 
-    postRequest(input: PostRequestInput!):  CashRequest!
-    acceptRequest(requestId: String!):      CashRequest!
-    completeRequest(requestId: String!):    CashRequest!  # ← requester marks done
-    cancelRequest(requestId: String!):      CashRequest!
+    # Requests
+    postRequest(input: PostRequestInput!):    CashRequest!
+    acceptRequest(requestId: String!):        CashRequest!
+    completeRequest(requestId: String!):      CashRequest!
+    cancelRequest(requestId: String!):        CashRequest!
 
-    sendMessage(input: SendMessageInput!):  Message!
-    submitRating(input: SubmitRatingInput!): Rating!
+    # Chat
+    sendMessage(input: SendMessageInput!):    Message!
+
+    # Ratings
+    submitRating(input: SubmitRatingInput!):  Rating!
   }
 
   type Subscription {

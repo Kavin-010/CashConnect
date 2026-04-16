@@ -26,7 +26,7 @@ export async function submitRating(
     throw new Error("You can only rate after a request is completed.");
   }
 
-  // Only requester or acceptor can rate
+  // Only requester rate
   const isRequester = request.requesterId === raterId;
   const isAcceptor  = request.acceptorId  === raterId;
 

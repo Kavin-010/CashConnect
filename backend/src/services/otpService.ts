@@ -14,37 +14,58 @@ function addMinutes(minutes: number): Date {
   return new Date(Date.now() + minutes * 60 * 1000);
 }
 
-export async function generateAndSendOtp(prisma: PrismaClient, email: string): Promise<boolean> {
+// ── Generate and send OTP (works for both EMAIL_VERIFY and PASSWORD_RESET) ────
+export async function generateAndSendOtp(
+  prisma: PrismaClient,
+  email: string,
+  purpose: "PASSWORD_RESET" | "EMAIL_VERIFY" = "PASSWORD_RESET"
+): Promise<boolean> {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (!user) return true;
+  if (!user) return true; // prevent enumeration
 
-  const rawCode = generateOtp();
+  const rawCode    = generateOtp();
   const hashedCode = await bcrypt.hash(rawCode, 10);
 
+  // Invalidate old unused OTPs of same purpose
   await prisma.otpToken.updateMany({
-    where: { userId: user.id, purpose: "PASSWORD_RESET", used: false },
-    data: { used: true },
+    where: { userId: user.id, purpose, used: false },
+    data:  { used: true },
   });
 
   await prisma.otpToken.create({
     data: {
-      userId: user.id,
-      code: hashedCode,
-      purpose: "PASSWORD_RESET",
+      userId:    user.id,
+      code:      hashedCode,
+      purpose,
       expiresAt: addMinutes(OTP_EXPIRES_MINUTES),
     },
   });
 
+  const isVerification = purpose === "EMAIL_VERIFY";
+
   await sendEmail({
-    to: user.email,
-    subject: "CampusCash Connect — Password Reset OTP",
+    to:      user.email,
+    subject: isVerification
+      ? "CampusCash Connect — Verify Your Email"
+      : "CampusCash Connect — Password Reset OTP",
     html: `
-      <div style="font-family:sans-serif;max-width:400px;margin:auto;">
-        <h2 style="color:#2563eb;">CampusCash Connect</h2>
-        <p>Hi ${user.name},</p>
-        <p>Your password reset OTP is:</p>
-        <div style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;padding:16px 0;">${rawCode}</div>
-        <p>Expires in <strong>${OTP_EXPIRES_MINUTES} minutes</strong>.</p>
+      <div style="font-family:sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
+        <h2 style="color:#4f46e5;margin-bottom:8px;">CampusCash Connect</h2>
+        <p style="color:#374151;">Hi ${user.name},</p>
+        <p style="color:#374151;">
+          ${isVerification
+            ? "Please verify your email address to activate your account."
+            : "Your password reset OTP is:"}
+        </p>
+        <div style="font-size:36px;font-weight:bold;letter-spacing:10px;color:#4f46e5;padding:20px 0;text-align:center;">
+          ${rawCode}
+        </div>
+        <p style="color:#6b7280;font-size:14px;">
+          This code expires in <strong>${OTP_EXPIRES_MINUTES} minutes</strong>.
+        </p>
+        <p style="color:#6b7280;font-size:13px;margin-top:16px;">
+          If you didn't request this, please ignore this email.
+        </p>
       </div>
     `,
   });
@@ -52,12 +73,22 @@ export async function generateAndSendOtp(prisma: PrismaClient, email: string): P
   return true;
 }
 
-export async function verifyOtp(prisma: PrismaClient, email: string, code: string): Promise<string> {
+// ── Verify OTP → return short-lived reset token (for password reset) ──────────
+export async function verifyOtp(
+  prisma: PrismaClient,
+  email: string,
+  code: string
+): Promise<string> {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (!user) throw new Error("Invalid OTP or email.");
 
   const otpRecord = await prisma.otpToken.findFirst({
-    where: { userId: user.id, purpose: "PASSWORD_RESET", used: false, expiresAt: { gt: new Date() } },
+    where: {
+      userId:    user.id,
+      purpose:   "PASSWORD_RESET",
+      used:      false,
+      expiresAt: { gt: new Date() },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -75,7 +106,12 @@ export async function verifyOtp(prisma: PrismaClient, email: string, code: strin
   );
 }
 
-export async function resetPassword(prisma: PrismaClient, resetToken: string, newPassword: string): Promise<boolean> {
+// ── Reset password ────────────────────────────────────────────────────────────
+export async function resetPassword(
+  prisma: PrismaClient,
+  resetToken: string,
+  newPassword: string
+): Promise<boolean> {
   if (newPassword.length < 8) throw new Error("Password must be at least 8 characters.");
 
   let payload: { userId: string; purpose: string };

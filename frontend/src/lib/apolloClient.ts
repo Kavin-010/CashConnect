@@ -9,12 +9,15 @@ import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { createClient } from "graphql-ws";
 import { getMainDefinition } from "@apollo/client/utilities";
 
-const GRAPHQL_HTTP = import.meta.env.VITE_API_URL ?? "http://localhost:4000/graphql";
-const GRAPHQL_WS   = import.meta.env.VITE_WS_URL  ?? "ws://localhost:4000/graphql";
+// In Docker: Nginx proxies /graphql → backend:4000/graphql
+// In dev:    VITE_API_URL points to localhost:4000
+const HTTP_URL = import.meta.env.VITE_API_URL ?? "/graphql";
+const WS_URL   = import.meta.env.VITE_WS_URL  ??
+  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/graphql`;
 
-const httpLink = createHttpLink({ uri: GRAPHQL_HTTP });
+const httpLink = createHttpLink({ uri: HTTP_URL });
 
-const authLink = setContext((_, { headers }) => {
+const authLink = setContext((_: any, { headers }: any) => {
   const token = localStorage.getItem("cc_token");
   return {
     headers: {
@@ -26,7 +29,7 @@ const authLink = setContext((_, { headers }) => {
 
 const wsLink = new GraphQLWsLink(
   createClient({
-    url: GRAPHQL_WS,
+    url: WS_URL,
     connectionParams: () => {
       const token = localStorage.getItem("cc_token");
       return token ? { authorization: `Bearer ${token}` } : {};

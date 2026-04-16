@@ -3,60 +3,37 @@ import { useState } from "react";
 import { useQuery, useMutation, useSubscription } from "@apollo/client/react";
 import { useNavigate } from "react-router-dom";
 import { ME_QUERY, OPEN_REQUESTS_QUERY, MY_REQUESTS_QUERY, USER_RATINGS_QUERY } from "../graphql/queries";
-import {
-  POST_REQUEST_MUTATION,
-  ACCEPT_REQUEST_MUTATION,
-} from "../graphql/mutations";
+import { POST_REQUEST_MUTATION, ACCEPT_REQUEST_MUTATION } from "../graphql/mutations";
 import { REQUEST_STATUS_CHANGED_SUBSCRIPTION } from "../graphql/subscriptions";
 import { clearToken } from "../lib/apolloClient";
 import { StarDisplay } from "../components/StarRating";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: true,
-  });
+  return new Date(iso).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", hour12:true });
 }
-
 function timeLeft(expiresAt) {
   if (!expiresAt) return null;
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (diff <= 0) return "Expired";
-  const mins = Math.floor(diff / 60000);
-  const hrs  = Math.floor(mins / 60);
-  if (hrs > 0) return `Expires in ${hrs}h ${mins % 60}m`;
-  return `Expires in ${mins}m`;
+  const mins = Math.floor(diff/60000);
+  const hrs  = Math.floor(mins/60);
+  return hrs > 0 ? `${hrs}h ${mins%60}m left` : `${mins}m left`;
 }
 
-// ── Notification Banner ───────────────────────────────────────────────────────
-
-function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
-  if (notifications.length === 0) return null;
-
+// ── Notification banner ───────────────────────────────────────────────────────
+function Notifications({ notifications, onDismiss, onGoToChat }) {
+  if (!notifications.length) return null;
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
-      {notifications.map((n) => (
-        <div
-          key={n.id}
-          className="bg-indigo-700 border border-indigo-500 text-white px-4 py-3 rounded-xl shadow-2xl flex flex-col gap-2"
-        >
-          <div className="flex justify-between items-start">
-            <p className="font-semibold text-sm">Request Accepted! 🎉</p>
-            <button
-              onClick={() => onDismiss(n.id)}
-              className="text-indigo-300 hover:text-white text-xl leading-none -mt-1"
-            >
-              ×
-            </button>
+    <div style={{ position:"fixed", top:16, right:16, zIndex:100, display:"flex", flexDirection:"column", gap:10, width:320 }}>
+      {notifications.map(n => (
+        <div key={n.id} style={{ background:"var(--card)", border:"1px solid var(--accent)", borderRadius:16, padding:16 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <span style={{ color:"var(--accent)", fontWeight:700, fontSize:12, letterSpacing:0.5 }}>🎉 REQUEST ACCEPTED</span>
+            <button onClick={()=>onDismiss(n.id)} style={{ background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:18, lineHeight:1 }}>×</button>
           </div>
-          <p className="text-xs text-indigo-200">{n.message}</p>
-          <button
-            onClick={() => onGoToChat(n.requestId, n.id)}
-            className="bg-white text-indigo-700 font-semibold text-xs px-3 py-1.5 rounded-lg hover:bg-indigo-100 self-start"
-          >
-            Open Chat →
+          <p style={{ color:"var(--muted)", fontSize:12, marginBottom:10, lineHeight:1.5 }}>{n.message}</p>
+          <button className="btn-accent" onClick={()=>onGoToChat(n.requestId, n.id)} style={{ padding:"8px 16px", fontSize:11, fontWeight:700, letterSpacing:0.5 }}>
+            OPEN CHAT →
           </button>
         </div>
       ))}
@@ -64,8 +41,8 @@ function NotificationBanner({ notifications, onDismiss, onGoToChat }) {
   );
 }
 
-// ── Request Subscriber ────────────────────────────────────────────────────────
-
+// ── Subscribes to one request — used in a map so must be separate component ──
+// This is how real-time "request accepted" works without refresh
 function RequestSubscriber({ requestId, onStatusChange }) {
   useSubscription(REQUEST_STATUS_CHANGED_SUBSCRIPTION, {
     variables: { requestId },
@@ -78,321 +55,232 @@ function RequestSubscriber({ requestId, onStatusChange }) {
   return null;
 }
 
-// ── Open Request Card with Rating ─────────────────────────────────────────────
-
+// ── Single open request card ──────────────────────────────────────────────────
 function OpenRequestCard({ req, onAccept, acceptLoading }) {
-  const { data: ratingData } = useQuery(USER_RATINGS_QUERY, {
-    variables: { userId: req.requester.id },
-  });
-
+  const { data: ratingData } = useQuery(USER_RATINGS_QUERY, { variables: { userId: req.requester.id } });
   const ratings = ratingData?.userRatings;
+  const tl      = timeLeft(req.expiresAt);
 
   return (
-    <div className="bg-gray-800 p-4 rounded-xl flex justify-between items-start">
-      <div className="flex-1">
-        <p className="font-semibold">₹{req.amount}</p>
-        <p className="text-sm text-gray-400 mt-0.5">{req.reason}</p>
+    <div className="card" style={{ padding:20, marginBottom:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontFamily:"var(--font-head)", fontSize:38, color:"var(--white)", lineHeight:1, marginBottom:4 }}>
+            ₹{req.amount}
+          </div>
+          <p style={{ color:"var(--muted)", fontSize:14, marginBottom:6 }}>{req.reason}</p>
 
-        {/* Location */}
-        {req.location && (
-          <p className="text-xs text-indigo-300 mt-1">
-            📍 {req.location}
-          </p>
-        )}
+          {req.location && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+              <span style={{ color:"var(--accent)", fontSize:13 }}>📍</span>
+              <span style={{ color:"var(--accent2)", fontSize:13, fontWeight:500 }}>{req.location}</span>
+            </div>
+          )}
 
-        {/* Requester info + rating */}
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <p className="text-xs text-gray-500">
-            By {req.requester.name} ({req.requester.rollNumber})
+          <div style={{ color:"var(--muted2)", fontSize:12, marginBottom:4 }}>
+            {req.requester.name}
             {req.requester.department && ` · ${req.requester.department}`}
-          </p>
+          </div>
+
+          {ratings && ratings.total > 0 && (
+            <div style={{ marginBottom:6 }}>
+              <StarDisplay average={ratings.average} total={ratings.total} size="sm" />
+            </div>
+          )}
+
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ color:"var(--muted2)", fontSize:11 }}>{formatDate(req.createdAt)}</span>
+            {tl && (
+              <span style={{ background:"rgba(255,184,0,0.15)", color:"var(--warning)", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:50 }}>
+                {tl}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Star rating of requester */}
-        {ratings && (
-          <div className="mt-1">
-            <StarDisplay
-              average={ratings.average}
-              total={ratings.total}
-              size="sm"
-            />
-          </div>
-        )}
-
-        <p className="text-xs text-gray-500 mt-1">
-          Posted: {formatDate(req.createdAt)}
-        </p>
-
-        {/* Expiry */}
-        {req.expiresAt && (
-          <p className="text-xs text-yellow-400 mt-1">
-            {timeLeft(req.expiresAt)}
-          </p>
-        )}
+        <button className="btn-accent" onClick={()=>onAccept(req.id)} disabled={acceptLoading} style={{ padding:"10px 20px", fontSize:12, fontWeight:700, letterSpacing:0.5, marginLeft:16, flexShrink:0 }}>
+          ACCEPT
+        </button>
       </div>
-
-      <button
-        onClick={() => onAccept(req.id)}
-        disabled={acceptLoading}
-        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-50 ml-4 mt-1 text-sm"
-      >
-        Accept
-      </button>
     </div>
   );
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
-
-function Dashboard() {
+export default function Dashboard() {
   const navigate = useNavigate();
-
-  const { data: meData } = useQuery(ME_QUERY);
-  const currentUser = meData?.me;
-
+  const { data: meData }   = useQuery(ME_QUERY);
+  const currentUser        = meData?.me;
   const [notifications, setNotifications] = useState([]);
+  const [showForm,      setShowForm]      = useState(false);
+  const [amount,   setAmount]   = useState("");
+  const [reason,   setReason]   = useState("");
+  const [location, setLocation] = useState("");
+  const [expiryMins, setExpiryMins] = useState("60");
 
-  const { data: myData, refetch: refetchMy } = useQuery(MY_REQUESTS_QUERY, {
-    fetchPolicy: "network-only",
-  });
+  // ── My requests — needed for subscription targets ─────────────────────────
+  const { data: myData, refetch: refetchMy } = useQuery(MY_REQUESTS_QUERY, { fetchPolicy:"network-only" });
+  const myActiveRequests = (myData?.myRequests ?? []).filter(r => r.status==="OPEN" || r.status==="ACCEPTED");
 
-  const myActiveRequests = (myData?.myRequests ?? []).filter(
-    (r) => r.status === "OPEN" || r.status === "ACCEPTED"
-  );
-
+  // ── Real-time: when backend publishes REQUEST_STATUS_CHANGED ──────────────
+  // For each of the user's active requests, RequestSubscriber listens via WS.
+  // When status becomes ACCEPTED → show notification immediately (no refresh needed).
   const handleStatusChange = (updatedRequest) => {
-    if (updatedRequest.status === "ACCEPTED" && updatedRequest.acceptor) {
-      setNotifications((prev) => [
-        ...prev,
-        {
-          id: `${updatedRequest.id}-${Date.now()}`,
-          message: `${updatedRequest.acceptor.name} (${updatedRequest.acceptor.rollNumber}) accepted your ₹${updatedRequest.amount} request for "${updatedRequest.reason}"`,
-          requestId: updatedRequest.id,
-        },
-      ]);
+    if (updatedRequest.status==="ACCEPTED" && updatedRequest.acceptor) {
+      setNotifications(prev => [...prev, {
+        id: `${updatedRequest.id}-${Date.now()}`,
+        message: `${updatedRequest.acceptor.name} (${updatedRequest.acceptor.rollNumber}) accepted your ₹${updatedRequest.amount} request`,
+        requestId: updatedRequest.id,
+      }]);
       refetchMy();
     }
   };
 
-  const dismissNotification = (id) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
+  const dismissNotification = id => setNotifications(prev => prev.filter(n => n.id !== id));
+  const goToChat = (requestId, notifId) => { dismissNotification(notifId); navigate(`/chat/${requestId}`); };
 
-  const goToChat = (requestId, notifId) => {
-    dismissNotification(notifId);
-    navigate(`/chat/${requestId}`);
-  };
+  // ── Open requests from others ─────────────────────────────────────────────
+  const { data: openData, loading: openLoading, error: openError, refetch: refetchOpen } =
+    useQuery(OPEN_REQUESTS_QUERY, { fetchPolicy:"network-only" });
 
-  const {
-    data: openData,
-    loading: openLoading,
-    error: openError,
-    refetch: refetchOpen,
-  } = useQuery(OPEN_REQUESTS_QUERY, { fetchPolicy: "network-only" });
-
-  const [amount,     setAmount]     = useState("");
-  const [reason,     setReason]     = useState("");
-  const [location,   setLocation]   = useState("");
-  const [expiryMins, setExpiryMins] = useState("60");
-
+  // ── Post request mutation ─────────────────────────────────────────────────
   const [postMutation, { loading: postLoading }] = useMutation(POST_REQUEST_MUTATION, {
     refetchQueries: [{ query: OPEN_REQUESTS_QUERY }, { query: MY_REQUESTS_QUERY }],
   });
 
   const handlePost = async () => {
-    if (!amount || !reason || !location) {
-      alert("Fill all fields including location");
-      return;
-    }
+    if (!amount||!reason||!location) { alert("Fill all fields including location"); return; }
     try {
-      await postMutation({
-        variables: {
-          input: {
-            amount: Number(amount),
-            reason,
-            location,
-            expiresInMinutes: Number(expiryMins),
-          },
-        },
-      });
-      setAmount("");
-      setReason("");
-      setLocation("");
-      setExpiryMins("60");
-    } catch (err) {
-      alert(err.message ?? "Failed to post request");
-    }
+      await postMutation({ variables: { input: { amount:Number(amount), reason, location, expiresInMinutes:Number(expiryMins) } } });
+      setAmount(""); setReason(""); setLocation(""); setExpiryMins("60"); setShowForm(false);
+    } catch (err) { alert(err.message ?? "Failed to post"); }
   };
 
-  const [acceptMutation, { loading: acceptLoading }] = useMutation(
-    ACCEPT_REQUEST_MUTATION,
-    { refetchQueries: [{ query: OPEN_REQUESTS_QUERY }] }
-  );
+  // ── Accept mutation ───────────────────────────────────────────────────────
+  const [acceptMutation, { loading: acceptLoading }] = useMutation(ACCEPT_REQUEST_MUTATION, {
+    refetchQueries: [{ query: OPEN_REQUESTS_QUERY }],
+  });
 
   const handleAccept = async (requestId) => {
-    try {
-      await acceptMutation({ variables: { requestId } });
-      navigate(`/chat/${requestId}`);
-    } catch (err) {
-      alert(err.message ?? "Failed to accept");
-    }
+    try { await acceptMutation({ variables: { requestId } }); navigate(`/chat/${requestId}`); }
+    catch (err) { alert(err.message ?? "Failed to accept"); }
   };
 
-  const logout = () => {
-    clearToken();
-    navigate("/");
-  };
+  const openRequests = openData?.openRequests ?? [];
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
+    <div style={{ minHeight:"100vh", background:"var(--bg)", maxWidth:480, margin:"0 auto", paddingBottom:80 }}>
 
-      <NotificationBanner
-        notifications={notifications}
-        onDismiss={dismissNotification}
-        onGoToChat={goToChat}
-      />
-
-      {myActiveRequests.map((req) => (
-        <RequestSubscriber
-          key={req.id}
-          requestId={req.id}
-          onStatusChange={handleStatusChange}
-        />
+      {/* Real-time subscription — one per active request */}
+      {myActiveRequests.map(req => (
+        <RequestSubscriber key={req.id} requestId={req.id} onStatusChange={handleStatusChange} />
       ))}
 
-      {/* Header */}
-      <div className="flex justify-between items-center mb-1">
-        <h1 className="text-2xl font-bold">CampusCash Dashboard 💸</h1>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/profile")}
-            className="text-sm text-gray-400 hover:text-white"
-          >
-            Profile
+      <Notifications notifications={notifications} onDismiss={dismissNotification} onGoToChat={goToChat} />
+
+      {/* ── Top bar ── */}
+      <div style={{ padding:"20px 20px 0", display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+        <div>
+          <p style={{ color:"var(--muted)", fontSize:11, textTransform:"uppercase", letterSpacing:1.5 }}>Welcome back</p>
+          <h2 style={{ fontFamily:"var(--font-head)", fontSize:28, color:"var(--white)", letterSpacing:1 }}>
+            {currentUser?.name?.toUpperCase() ?? "..."}
+          </h2>
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={()=>navigate("/profile")} style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:"50%", width:42, height:42, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:16 }}>
+            👤
           </button>
-          <button
-            onClick={logout}
-            className="text-sm text-gray-400 hover:text-white"
-          >
-            Logout
+          <button onClick={()=>{ clearToken(); navigate("/"); }} style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:"50%", width:42, height:42, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"var(--muted)", fontSize:16 }}>
+            ↩
           </button>
         </div>
       </div>
-      <p className="text-gray-400 mb-6">
-        Logged in as:{" "}
-        <span className="text-white font-medium">{currentUser?.name}</span>{" "}
-        ({currentUser?.email})
-      </p>
 
-      {/* My Requests History Button */}
-      <button
-        onClick={() => navigate("/history")}
-        className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl mb-6 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xl">📋</span>
-          <div className="text-left">
-            <p className="font-semibold text-sm">My Requests</p>
-            <p className="text-gray-400 text-xs">
-              View your active and past requests
-              {myActiveRequests.length > 0 && (
-                <span className="ml-2 bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-full">
-                  {myActiveRequests.length} active
-                </span>
-              )}
-            </p>
+      {/* ── My Requests button ── */}
+      <div style={{ padding:"16px 20px" }}>
+        <button onClick={()=>navigate("/history")} style={{ width:"100%", background:"var(--card)", border:"1px solid var(--border)", borderRadius:16, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer", color:"var(--white)" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <span style={{ fontSize:20 }}>📋</span>
+            <div style={{ textAlign:"left" }}>
+              <p style={{ fontWeight:600, fontSize:14, color:"var(--white)" }}>My Requests</p>
+              {myActiveRequests.length > 0
+                ? <p style={{ fontSize:11, color:"var(--accent)", fontWeight:700, marginTop:1 }}>{myActiveRequests.length} active</p>
+                : <p style={{ fontSize:11, color:"var(--muted2)", marginTop:1 }}>View history</p>
+              }
+            </div>
           </div>
-        </div>
-        <span className="text-gray-400 text-lg">→</span>
-      </button>
-
-      {/* Post Request */}
-      <div className="bg-gray-800 p-4 rounded-xl mb-6">
-        <h2 className="mb-3 font-semibold">Post Cash Request</h2>
-
-        <input
-          type="number"
-          placeholder="Amount (₹)"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
-        />
-        <input
-          type="text"
-          placeholder="Reason (e.g. Need cash for canteen)"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
-        />
-        <input
-          type="text"
-          placeholder="📍 Location (e.g. Canteen Block A, Main Library)"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          className="w-full p-2 mb-3 rounded bg-gray-700 text-white"
-        />
-
-        <div className="flex items-center gap-3 mb-3">
-          <label className="text-gray-400 text-sm whitespace-nowrap">Visible for:</label>
-          <select
-            value={expiryMins}
-            onChange={(e) => setExpiryMins(e.target.value)}
-            className="flex-1 p-2 rounded bg-gray-700 text-white"
-          >
-            <option value="15">15 minutes</option>
-            <option value="30">30 minutes</option>
-            <option value="60">1 hour</option>
-            <option value="120">2 hours</option>
-            <option value="180">3 hours</option>
-            <option value="360">6 hours</option>
-            <option value="720">12 hours</option>
-            <option value="1440">24 hours</option>
-          </select>
-        </div>
-
-        <button
-          onClick={handlePost}
-          disabled={postLoading}
-          className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded disabled:opacity-50"
-        >
-          {postLoading ? "Posting..." : "Post Request"}
+          <span style={{ color:"var(--accent)", fontSize:18 }}>→</span>
         </button>
       </div>
 
-      {/* Active Requests from others */}
-      <div>
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="font-semibold">Active Requests</h2>
-          <button
-            onClick={() => refetchOpen()}
-            className="text-xs text-gray-400 hover:text-white"
-          >
-            ↻ Refresh
+      {/* ── Post Request ── */}
+      <div style={{ padding:"0 20px 20px" }}>
+        {!showForm ? (
+          <button className="btn-accent" onClick={()=>setShowForm(true)} style={{ width:"100%", padding:16, fontSize:14, fontWeight:700, letterSpacing:1 }}>
+            + POST CASH REQUEST
           </button>
-        </div>
-
-        {openError && <p className="text-red-400 mb-3">{openError.message}</p>}
-
-        {openLoading && (openData?.openRequests ?? []).length === 0 ? (
-          <p className="text-gray-400">Loading...</p>
-        ) : (openData?.openRequests ?? []).length === 0 ? (
-          <p className="text-gray-400">No open requests from others</p>
         ) : (
-          <div className="space-y-3">
-            {(openData?.openRequests ?? []).map((req) => (
-              <OpenRequestCard
-                key={req.id}
-                req={req}
-                onAccept={handleAccept}
-                acceptLoading={acceptLoading}
-              />
+          <div className="card" style={{ padding:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <span style={{ fontFamily:"var(--font-head)", fontSize:22, letterSpacing:1 }}>NEW REQUEST</span>
+              <button onClick={()=>setShowForm(false)} style={{ background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:22 }}>×</button>
+            </div>
+            {[
+              { label:"Amount (₹)", value:amount, set:setAmount, type:"number", placeholder:"100" },
+              { label:"Reason",     value:reason,  set:setReason, type:"text",   placeholder:"Need cash for canteen" },
+              { label:"📍 Location",value:location,set:setLocation,type:"text",  placeholder:"Canteen Block A" },
+            ].map(({ label, value, set, type, placeholder }) => (
+              <div key={label} style={{ marginBottom:12 }}>
+                <label style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:"var(--muted)", textTransform:"uppercase", display:"block", marginBottom:8 }}>{label}</label>
+                <input className="inp" type={type} placeholder={placeholder} value={value} onChange={e=>set(e.target.value)} />
+              </div>
             ))}
+            <div style={{ marginBottom:20 }}>
+              <label style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:"var(--muted)", textTransform:"uppercase", display:"block", marginBottom:8 }}>Visible For</label>
+              <select className="inp" value={expiryMins} onChange={e=>setExpiryMins(e.target.value)}>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+                <option value="180">3 hours</option>
+                <option value="360">6 hours</option>
+                <option value="720">12 hours</option>
+                <option value="1440">24 hours</option>
+              </select>
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button className="btn-ghost" onClick={()=>setShowForm(false)} style={{ flex:1, padding:14, fontSize:13, fontWeight:700 }}>CANCEL</button>
+              <button className="btn-accent" onClick={handlePost} disabled={postLoading} style={{ flex:2, padding:14, fontSize:13, fontWeight:700, letterSpacing:0.5 }}>
+                {postLoading?"POSTING...":"POST REQUEST"}
+              </button>
+            </div>
           </div>
         )}
       </div>
 
+      {/* ── Active Requests ── */}
+      <div style={{ padding:"0 20px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <h2 style={{ fontFamily:"var(--font-head)", fontSize:22, letterSpacing:1, color:"var(--white)" }}>ACTIVE REQUESTS</h2>
+          <button onClick={()=>refetchOpen()} style={{ background:"none", border:"none", color:"var(--muted)", fontSize:13, cursor:"pointer", fontFamily:"var(--font-body)" }}>↻ Refresh</button>
+        </div>
+
+        {openError && <p style={{ color:"var(--danger)", fontSize:13, marginBottom:12 }}>{openError.message}</p>}
+
+        {openLoading && openRequests.length===0 ? (
+          <p style={{ color:"var(--muted)", textAlign:"center", padding:40 }}>Loading...</p>
+        ) : openRequests.length===0 ? (
+          <div style={{ textAlign:"center", padding:40 }}>
+            <p style={{ fontSize:36, marginBottom:8 }}>💸</p>
+            <p style={{ color:"var(--muted)", fontSize:14 }}>No open requests right now</p>
+            <p style={{ color:"var(--muted2)", fontSize:12, marginTop:4 }}>Be the first to post one</p>
+          </div>
+        ) : (
+          openRequests.map(req => (
+            <OpenRequestCard key={req.id} req={req} onAccept={handleAccept} acceptLoading={acceptLoading} />
+          ))
+        )}
+      </div>
     </div>
   );
 }
-
-export default Dashboard;

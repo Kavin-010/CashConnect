@@ -5,16 +5,23 @@ import Dashboard from "./pages/Dashboard";
 import Chat from "./pages/Chat";
 import ForgotPassword from "./pages/ForgotPassword";
 import RequestHistory from "./pages/RequestHistory";
+import Profile from "./pages/Profile";
+import VerifyEmail from "./pages/VerifyEmail";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicRoute from "./components/PublicRoute";
-import Profile from "./pages/Profile";
 
 function App() {
   return (
     <Routes>
+      {/* Public routes */}
       <Route path="/" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
       <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+
+      {/* Verify email — public, no redirect (needed after signup and from login) */}
+      <Route path="/verify-email" element={<VerifyEmail />} />
+
+      {/* Protected routes */}
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/chat/:requestId" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
       <Route path="/history" element={<ProtectedRoute><RequestHistory /></ProtectedRoute>} />

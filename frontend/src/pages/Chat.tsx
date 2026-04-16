@@ -1,263 +1,185 @@
 // @ts-nocheck
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@apollo/client/react";
+import { useQuery, useSubscription } from "@apollo/client/react";
 import { useChat } from "../hooks/useChat";
 import { ME_QUERY } from "../graphql/queries";
+import { REQUEST_STATUS_CHANGED_SUBSCRIPTION } from "../graphql/subscriptions";
 
-// ── Location message detector ─────────────────────────────────────────────────
-function isLocationMessage(content) {
-  return content.startsWith("📍LOCATION:");
-}
-
-function parseLocation(content) {
-  const coords = content.replace("📍LOCATION:", "");
-  const [lat, lng] = coords.split(",");
+function isLocationMessage(c) { return c.startsWith("📍LOCATION:"); }
+function parseLocation(c) {
+  const [lat, lng] = c.replace("📍LOCATION:", "").split(",");
   return { lat: parseFloat(lat), lng: parseFloat(lng) };
 }
 
-function getMapsUrl(lat, lng) {
-  return `https://www.google.com/maps?q=${lat},${lng}`;
-}
-
-// ── Message Bubble ────────────────────────────────────────────────────────────
 function MessageBubble({ msg, isMe }) {
-  const isLocation = isLocationMessage(msg.content);
+  const isLoc = isLocationMessage(msg.content);
+  const { lat, lng } = isLoc ? parseLocation(msg.content) : {};
 
   return (
-    <div className={`mb-3 flex ${isMe ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-xs lg:max-w-md px-3 py-2 rounded-xl text-sm ${
-          isMe ? "bg-indigo-600 text-white" : "bg-gray-700 text-white"
-        }`}
-      >
-        {/* Sender name for received messages */}
-        {!isMe && (
-          <p className="text-xs text-gray-400 mb-1">{msg.sender.name}</p>
-        )}
+    <div style={{ display:"flex", justifyContent:isMe?"flex-end":"flex-start", marginBottom:12 }}>
+      <div style={{
+        maxWidth:"72%",
+        background: isMe ? "var(--accent)" : "var(--card2)",
+        borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+        padding:"12px 16px",
+        border: isMe ? "none" : "1px solid var(--border)",
+      }}>
+        {!isMe && <p style={{ color:"var(--accent2)", fontSize:11, fontWeight:700, marginBottom:4, textTransform:"uppercase", letterSpacing:0.5 }}>{msg.sender.name}</p>}
 
-        {/* Location message */}
-        {isLocation ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold">
-              📍 {isMe ? "You shared your location" : `${msg.sender.name} shared their location`}
+        {isLoc ? (
+          <>
+            <p style={{ fontSize:12, fontWeight:700, marginBottom:8, color: isMe ? "#000" : "var(--white)" }}>
+              📍 {isMe?"You shared your location":`${msg.sender.name}'s location`}
             </p>
             <a
-              href={getMapsUrl(
-                parseLocation(msg.content).lat,
-                parseLocation(msg.content).lng
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`text-xs px-3 py-1.5 rounded-lg font-semibold text-center ${
-                isMe
-                  ? "bg-white text-indigo-700 hover:bg-indigo-100"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700"
-              }`}
+              href={`https://www.google.com/maps?q=${lat},${lng}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ display:"block", background: isMe ? "rgba(0,0,0,0.2)" : "var(--accent)", color: isMe ? "#000" : "#000", textDecoration:"none", padding:"8px 14px", borderRadius:50, fontSize:12, fontWeight:700, textAlign:"center", letterSpacing:0.5 }}
             >
-              View on Google Maps →
+              VIEW ON MAPS →
             </a>
-          </div>
+          </>
         ) : (
-          // Regular text message
-          <p>{msg.content}</p>
+          <p style={{ color: isMe ? "#000" : "var(--white)", fontSize:14, lineHeight:1.5 }}>{msg.content}</p>
         )}
 
-        {/* Timestamp */}
-        <p
-          className={`text-xs mt-1 ${
-            isMe ? "text-indigo-300" : "text-gray-500"
-          }`}
-        >
-          {new Date(msg.createdAt).toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          })}
+        <p style={{ color: isMe ? "rgba(0,0,0,0.5)" : "var(--muted2)", fontSize:10, marginTop:6, textAlign:"right" }}>
+          {new Date(msg.createdAt).toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit", hour12:true })}
         </p>
       </div>
     </div>
   );
 }
 
-// ── Main Chat Component ───────────────────────────────────────────────────────
-
-function Chat() {
-  const { requestId }   = useParams();
-  const navigate        = useNavigate();
+export default function Chat() {
+  const { requestId }     = useParams();
+  const navigate          = useNavigate();
   const [input, setInput] = useState("");
+  const [completed, setCompleted] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
 
-  const {
-    chatRoom,
-    messages,
-    sendMessage,
-    bottomRef,
-    loading,
-    sendLoading,
-    error,
-  } = useChat(requestId ?? "");
-
+  const { chatRoom, messages, sendMessage, bottomRef, loading, sendLoading, error } = useChat(requestId ?? "");
   const { data: meData } = useQuery(ME_QUERY);
   const myId = meData?.me?.id;
 
-  // ── Send text message ─────────────────────────────────────────────────────
+  // ── Listen for request completion so BOTH users see the closed state ───────
+  // When requester clicks "Mark Done", backend publishes COMPLETED status.
+  // This subscription catches it for the ACCEPTOR automatically.
+  useSubscription(REQUEST_STATUS_CHANGED_SUBSCRIPTION, {
+    variables: { requestId: requestId ?? "" },
+    skip: !requestId,
+    onData: ({ data }) => {
+      const updated = data?.data?.requestStatusChanged;
+      if (updated?.status === "COMPLETED" || updated?.status === "CANCELLED") {
+        setCompleted(true);
+      }
+    },
+  });
+
   const handleSend = async () => {
     if (!input.trim()) return;
     await sendMessage(input);
     setInput("");
   };
 
-  // ── Share location ────────────────────────────────────────────────────────
   const handleShareLocation = () => {
-    if (!navigator.geolocation) {
-      alert("Your browser does not support location sharing.");
-      return;
-    }
-
+    if (!navigator.geolocation) { alert("Location not supported"); return; }
     setLocationLoading(true);
-
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        // Send as a special formatted message
-        await sendMessage(`📍LOCATION:${latitude},${longitude}`);
+      async pos => {
+        await sendMessage(`📍LOCATION:${pos.coords.latitude},${pos.coords.longitude}`);
         setLocationLoading(false);
       },
-      (err) => {
-        setLocationLoading(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          alert(
-            "Location access denied. Please allow location access in your browser settings and try again."
-          );
-        } else {
-          alert("Could not get your location. Please try again.");
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
+      () => { setLocationLoading(false); alert("Location access denied. Enable it in browser settings."); },
+      { enableHighAccuracy:true, timeout:10000 }
     );
   };
 
-  // ── Loading state ─────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <p className="text-gray-400">Loading chat...</p>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <p style={{ color:"var(--muted)" }}>Loading chat...</p>
+    </div>
+  );
 
-  // ── Error / not found ─────────────────────────────────────────────────────
-  if (error || !chatRoom) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center gap-4">
-        <p className="text-red-400 text-lg">
-          {error ? error.message : "Chat room not found."}
-        </p>
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="bg-indigo-600 hover:bg-indigo-700 px-6 py-2 rounded-xl"
-        >
-          Back to Dashboard
-        </button>
-      </div>
-    );
-  }
+  if (error || !chatRoom) return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:24 }}>
+      <p style={{ color:"var(--danger)", fontSize:16, textAlign:"center" }}>{error ? error.message : "Chat room not found"}</p>
+      <button className="btn-accent" onClick={()=>navigate("/dashboard")} style={{ padding:"12px 24px", fontSize:13, fontWeight:700 }}>
+        BACK TO DASHBOARD
+      </button>
+    </div>
+  );
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Request completed/cancelled banner ────────────────────────────────────
+  if (completed) return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20, padding:24 }}>
+      <div style={{ fontSize:60 }}>✅</div>
+      <h2 style={{ fontFamily:"var(--font-head)", fontSize:32, letterSpacing:2, color:"var(--white)", textAlign:"center" }}>REQUEST COMPLETED</h2>
+      <p style={{ color:"var(--muted)", fontSize:14, textAlign:"center", maxWidth:300 }}>
+        This cash request has been marked as completed. The chat is now closed.
+      </p>
+      <button className="btn-accent" onClick={()=>navigate("/dashboard")} style={{ padding:"14px 32px", fontSize:14, fontWeight:700, letterSpacing:1 }}>
+        BACK TO DASHBOARD
+      </button>
+      <button onClick={()=>navigate("/history")} style={{ background:"none", border:"none", color:"var(--muted)", fontSize:13, cursor:"pointer", fontFamily:"var(--font-body)" }}>
+        View request history
+      </button>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col p-6">
+    <div style={{ height:"100vh", background:"var(--bg)", display:"flex", flexDirection:"column", maxWidth:480, margin:"0 auto" }}>
 
       {/* Header */}
-      <div className="flex items-center gap-3 mb-2">
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="text-gray-400 hover:text-white text-sm"
-        >
-          ← Back
-        </button>
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold">
-            {chatRoom.request.requester.name} &amp;{" "}
-            {chatRoom.request.acceptor?.name}
-          </h1>
-          <p className="text-gray-400 text-sm">
-            ₹{chatRoom.request.amount} — {chatRoom.request.reason}
+      <div style={{ padding:"16px 20px", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", gap:14, background:"var(--bg)", flexShrink:0 }}>
+        <button onClick={()=>navigate("/dashboard")} style={{ background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:22, lineHeight:1 }}>←</button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <p style={{ fontFamily:"var(--font-head)", fontSize:18, letterSpacing:1, color:"var(--white)", lineHeight:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+            {chatRoom.request.requester.name} × {chatRoom.request.acceptor?.name}
+          </p>
+          <p style={{ color:"var(--muted)", fontSize:12, marginTop:2 }}>
+            ₹{chatRoom.request.amount} · {chatRoom.request.reason}
           </p>
         </div>
-
-        {/* Share Location button in header */}
         <button
           onClick={handleShareLocation}
-          disabled={locationLoading || sendLoading}
-          className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 transition-colors"
+          disabled={locationLoading||sendLoading}
+          style={{ background:"var(--accentdim)", border:"1px solid var(--accent)", borderRadius:50, padding:"8px 14px", cursor:"pointer", color:"var(--accent)", fontSize:11, fontWeight:700, fontFamily:"var(--font-body)", whiteSpace:"nowrap", flexShrink:0 }}
         >
-          {locationLoading ? (
-            <>
-              <span className="animate-spin">⏳</span>
-              Getting location...
-            </>
-          ) : (
-            <>
-              📍 Share Location
-            </>
-          )}
+          {locationLoading?"...":"📍 SHARE"}
         </button>
       </div>
 
-      <div className="border-b border-gray-700 mb-4" />
-
       {/* Messages */}
-      <div className="flex-1 bg-gray-800 p-4 rounded-xl overflow-y-auto mb-4 min-h-64 max-h-[60vh]">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-            <p className="text-gray-400">No messages yet</p>
-            <p className="text-gray-500 text-sm">
-              Say hello! You can also share your location so the other person can find you.
-            </p>
+      <div style={{ flex:1, overflowY:"auto", padding:"20px 20px 10px" }}>
+        {messages.length===0 ? (
+          <div style={{ textAlign:"center", padding:"60px 20px" }}>
+            <p style={{ fontSize:36, marginBottom:8 }}>💬</p>
+            <p style={{ color:"var(--muted)", fontSize:14 }}>No messages yet</p>
+            <p style={{ color:"var(--muted2)", fontSize:12, marginTop:4 }}>Share your location to meet up!</p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              msg={msg}
-              isMe={msg.sender.id === myId}
-            />
-          ))
+          messages.map(msg => <MessageBubble key={msg.id} msg={msg} isMe={msg.sender.id===myId} />)
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input area */}
-      <div className="flex gap-2">
+      {/* Input */}
+      <div style={{ padding:"12px 16px", borderTop:"1px solid var(--border)", display:"flex", gap:10, background:"var(--bg)", flexShrink:0 }}>
         <input
+          className="inp"
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&handleSend()}
           placeholder="Type a message..."
-          className="flex-1 p-3 rounded-xl bg-gray-700 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+          style={{ flex:1, borderRadius:50, padding:"12px 20px" }}
         />
-        <button
-          onClick={handleSend}
-          disabled={sendLoading || !input.trim()}
-          className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-xl disabled:opacity-50 font-medium"
-        >
-          {sendLoading ? "..." : "Send"}
+        <button className="btn-accent" onClick={handleSend} disabled={sendLoading||!input.trim()} style={{ padding:"12px 20px", fontSize:13, fontWeight:700, borderRadius:50, flexShrink:0 }}>
+          SEND
         </button>
       </div>
-
-      {/* Location hint */}
-      <p className="text-gray-600 text-xs text-center mt-2">
-        Use "Share Location" to help the other person find you on campus
-      </p>
-
     </div>
   );
 }
-
-export default Chat;

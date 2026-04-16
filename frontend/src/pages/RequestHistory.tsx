@@ -5,331 +5,71 @@ import { useNavigate } from "react-router-dom";
 import { MY_REQUESTS_QUERY, MY_RATING_FOR_REQUEST_QUERY } from "../graphql/queries";
 import { COMPLETE_REQUEST_MUTATION, CANCEL_REQUEST_MUTATION } from "../graphql/mutations";
 import RatingModal from "../components/RatingModal";
-import { StarDisplay } from "../components/StarRating";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: true,
-  });
+  return new Date(iso).toLocaleString("en-IN", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", hour12:true });
 }
 
-function timeLeft(expiresAt) {
-  if (!expiresAt) return null;
-  const diff = new Date(expiresAt).getTime() - Date.now();
-  if (diff <= 0) return "Expired";
-  const mins = Math.floor(diff / 60000);
-  const hrs  = Math.floor(mins / 60);
-  if (hrs > 0) return `Expires in ${hrs}h ${mins % 60}m`;
-  return `Expires in ${mins}m`;
-}
-
-function statusBadge(status) {
-  const map = {
-    OPEN:      "bg-green-700 text-green-200",
-    ACCEPTED:  "bg-blue-700 text-blue-200",
-    COMPLETED: "bg-gray-600 text-gray-200",
-    CANCELLED: "bg-red-800 text-red-200",
-    EXPIRED:   "bg-yellow-800 text-yellow-200",
-  };
-  return map[status] ?? "bg-gray-700 text-gray-300";
-}
-
-// ── Main Component ────────────────────────────────────────────────────────────
-
-function RequestHistory() {
-  const navigate = useNavigate();
-
-  // Rating modal state
-  const [ratingModal, setRatingModal] = useState(null);
-  // { requestId, ratedUser }
-
-  const { data, loading, error, refetch } = useQuery(MY_REQUESTS_QUERY, {
-    fetchPolicy: "network-only",
-  });
-
-  const [completeMutation] = useMutation(COMPLETE_REQUEST_MUTATION, {
-    refetchQueries: [{ query: MY_REQUESTS_QUERY }],
-  });
-
-  const [cancelMutation] = useMutation(CANCEL_REQUEST_MUTATION, {
-    refetchQueries: [{ query: MY_REQUESTS_QUERY }],
-  });
-
-  const handleComplete = async (req) => {
-    if (!confirm("Mark this request as completed?")) return;
-    try {
-      await completeMutation({ variables: { requestId: req.id } });
-      // After completing, prompt to rate the acceptor
-      if (req.acceptor) {
-        setTimeout(() => {
-          setRatingModal({
-            requestId: req.id,
-            ratedUser: req.acceptor.name,
-          });
-        }, 500);
-      }
-    } catch (err) {
-      alert(err.message ?? "Failed to complete");
-    }
-  };
-
-  const handleCancel = async (requestId) => {
-    if (!confirm("Cancel this request?")) return;
-    try {
-      await cancelMutation({ variables: { requestId } });
-    } catch (err) {
-      alert(err.message ?? "Failed to cancel");
-    }
-  };
-
-  const allRequests     = data?.myRequests ?? [];
-  const activeRequests  = allRequests.filter(r => r.status === "OPEN" || r.status === "ACCEPTED");
-  const historyRequests = allRequests.filter(r => !["OPEN", "ACCEPTED"].includes(r.status));
-
-  return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
-
-      {/* Rating Modal */}
-      {ratingModal && (
-        <RatingModal
-          requestId={ratingModal.requestId}
-          ratedUser={ratingModal.ratedUser}
-          onClose={() => setRatingModal(null)}
-          onSuccess={() => refetch()}
-        />
-      )}
-
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="text-gray-400 hover:text-white text-sm"
-        >
-          ← Back
-        </button>
-        <h1 className="text-2xl font-bold">My Requests</h1>
-        <button
-          onClick={() => refetch()}
-          className="ml-auto text-xs text-gray-400 hover:text-white"
-        >
-          ↻ Refresh
-        </button>
-      </div>
-
-      {error && <p className="text-red-400 mb-4">{error.message}</p>}
-
-      {loading ? (
-        <p className="text-gray-400">Loading...</p>
-      ) : allRequests.length === 0 ? (
-        <div className="bg-gray-800 rounded-xl p-8 text-center">
-          <p className="text-gray-400">No requests yet</p>
-          <p className="text-gray-500 text-sm mt-1">
-            Go to dashboard and post your first cash request
-          </p>
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="mt-4 bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded text-sm"
-          >
-            Go to Dashboard
-          </button>
-        </div>
-      ) : (
-        <>
-          {/* ── Summary Stats ── */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
-            {[
-              { label: "Total",     value: allRequests.length,                                       color: "text-white" },
-              { label: "Completed", value: allRequests.filter(r => r.status === "COMPLETED").length, color: "text-green-400" },
-              { label: "Cancelled", value: allRequests.filter(r => r.status === "CANCELLED").length, color: "text-red-400" },
-              { label: "Expired",   value: allRequests.filter(r => r.status === "EXPIRED").length,   color: "text-yellow-400" },
-            ].map((stat) => (
-              <div key={stat.label} className="bg-gray-800 rounded-xl p-4 text-center">
-                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-                <p className="text-gray-400 text-xs mt-1">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* ── Active Requests ── */}
-          {activeRequests.length > 0 && (
-            <div className="mb-8">
-              <h2 className="font-semibold mb-3 flex items-center gap-2">
-                <span className="text-green-400">Active</span>
-                <span className="bg-green-700 text-green-200 text-xs px-2 py-0.5 rounded-full">
-                  {activeRequests.length}
-                </span>
-              </h2>
-              <div className="space-y-3">
-                {activeRequests.map((req) => (
-                  <RequestCard
-                    key={req.id}
-                    req={req}
-                    navigate={navigate}
-                    onComplete={handleComplete}
-                    onCancel={handleCancel}
-                    onRate={(requestId, ratedUser) =>
-                      setRatingModal({ requestId, ratedUser })
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Past Requests ── */}
-          <div>
-            <h2 className="font-semibold mb-3 flex items-center gap-2">
-              <span className="text-gray-400">Past Requests</span>
-              <span className="bg-gray-700 text-gray-300 text-xs px-2 py-0.5 rounded-full">
-                {historyRequests.length}
-              </span>
-            </h2>
-
-            {historyRequests.length === 0 ? (
-              <div className="bg-gray-800 rounded-xl p-6 text-center">
-                <p className="text-gray-400">No past requests yet</p>
-                <p className="text-gray-500 text-sm mt-1">
-                  Completed, cancelled and expired requests will appear here
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {historyRequests.map((req) => (
-                  <RequestCard
-                    key={req.id}
-                    req={req}
-                    navigate={navigate}
-                    onComplete={handleComplete}
-                    onCancel={handleCancel}
-                    onRate={(requestId, ratedUser) =>
-                      setRatingModal({ requestId, ratedUser })
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Request Card ──────────────────────────────────────────────────────────────
+const STATUS_STYLE = {
+  OPEN:      { bg:"rgba(0,196,140,0.12)",  color:"#00c48c" },
+  ACCEPTED:  { bg:"rgba(0,196,140,0.25)",  color:"#00e6a5" },
+  COMPLETED: { bg:"rgba(100,100,100,0.15)",color:"#777" },
+  CANCELLED: { bg:"rgba(255,68,68,0.12)",  color:"#ff4444" },
+  EXPIRED:   { bg:"rgba(255,184,0,0.12)",  color:"#ffb800" },
+};
 
 function RequestCard({ req, navigate, onComplete, onCancel, onRate }) {
-
-  // Check if user has already rated this request
   const { data: ratingData } = useQuery(MY_RATING_FOR_REQUEST_QUERY, {
     variables: { requestId: req.id },
     skip: req.status !== "COMPLETED",
   });
-
   const alreadyRated = !!ratingData?.myRatingForRequest;
+  const s = STATUS_STYLE[req.status] ?? STATUS_STYLE.COMPLETED;
 
   return (
-    <div className="bg-gray-800 p-4 rounded-xl">
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-
-          {/* Amount + Status */}
-          <div className="flex items-center gap-2 mb-1">
-            <p className="font-semibold">₹{req.amount}</p>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${statusBadge(req.status)}`}>
+    <div className="card" style={{ padding:20, marginBottom:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+            <span style={{ fontFamily:"var(--font-head)", fontSize:30, color:"var(--white)" }}>₹{req.amount}</span>
+            <span style={{ background:s.bg, color:s.color, fontSize:10, fontWeight:700, padding:"3px 10px", borderRadius:50, letterSpacing:0.5, textTransform:"uppercase" }}>
               {req.status}
             </span>
           </div>
-
-          {/* Reason */}
-          <p className="text-sm text-gray-400">{req.reason}</p>
-
-          {/* Location */}
-          {req.location && (
-            <p className="text-xs text-indigo-300 mt-1">
-              📍 {req.location}
-            </p>
-          )}
-
-          {/* Date */}
-          <p className="text-xs text-gray-500 mt-1">
-            Posted: {formatDate(req.createdAt)}
-          </p>
-
-          {/* Expiry */}
-          {req.expiresAt && req.status === "OPEN" && (
-            <p className="text-xs text-yellow-400 mt-1">
-              {timeLeft(req.expiresAt)}
-            </p>
-          )}
-
-          {/* Acceptor info */}
+          <p style={{ color:"var(--muted)", fontSize:13, marginBottom:4 }}>{req.reason}</p>
+          {req.location && <p style={{ color:"var(--accent2)", fontSize:12, marginBottom:4 }}>📍 {req.location}</p>}
+          <p style={{ color:"var(--muted2)", fontSize:11 }}>{formatDate(req.createdAt)}</p>
           {req.acceptor && (
-            <p className="text-sm mt-1">
-              <span className="text-gray-400">
-                {req.status === "COMPLETED" ? "Completed with" : "Accepted by"}:{" "}
-              </span>
-              <span className="text-green-400 font-semibold">{req.acceptor.name}</span>
-              <span className="text-gray-500"> ({req.acceptor.rollNumber})</span>
+            <p style={{ color:"var(--success)", fontSize:12, marginTop:6, fontWeight:600 }}>
+              {req.status==="COMPLETED" ? "✓ Completed with" : "Accepted by"} {req.acceptor.name}
             </p>
           )}
-
-          {/* Already rated badge */}
-          {req.status === "COMPLETED" && alreadyRated && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <span className="text-yellow-400 text-xs">★</span>
-              <span className="text-gray-400 text-xs">
-                You rated {ratingData.myRatingForRequest.stars}/5
-                {ratingData.myRatingForRequest.comment && (
-                  <> — "{ratingData.myRatingForRequest.comment}"</>
-                )}
-              </span>
-            </div>
+          {req.status==="COMPLETED" && alreadyRated && (
+            <p style={{ color:"var(--warning)", fontSize:11, marginTop:4 }}>
+              ★ You rated {ratingData.myRatingForRequest.stars}/5
+            </p>
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex flex-col gap-2 ml-4">
-
-          {/* Open Chat */}
-          {req.status === "ACCEPTED" && req.chatRoom && (
-            <button
-              onClick={() => navigate(`/chat/${req.id}`)}
-              className="bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded text-sm"
-            >
-              Open Chat
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginLeft:12 }}>
+          {req.status==="ACCEPTED" && req.chatRoom && (
+            <button className="btn-accent" onClick={()=>navigate(`/chat/${req.id}`)} style={{ padding:"8px 14px", fontSize:11, fontWeight:700, letterSpacing:0.5 }}>
+              CHAT
             </button>
           )}
-
-          {/* Mark Done */}
-          {req.status === "ACCEPTED" && (
-            <button
-              onClick={() => onComplete(req)}
-              className="bg-green-700 hover:bg-green-600 px-3 py-1 rounded text-sm"
-            >
-              Mark Done ✓
+          {req.status==="ACCEPTED" && (
+            <button onClick={()=>onComplete(req)} style={{ background:"rgba(0,196,140,0.12)", border:"1px solid var(--success)", borderRadius:50, padding:"8px 14px", fontSize:11, fontWeight:700, color:"var(--success)", cursor:"pointer", fontFamily:"var(--font-body)", letterSpacing:0.5 }}>
+              DONE ✓
             </button>
           )}
-
-          {/* Rate button — show only if completed and not yet rated */}
-          {req.status === "COMPLETED" && req.acceptor && !alreadyRated && (
-            <button
-              onClick={() => onRate(req.id, req.acceptor.name)}
-              className="bg-yellow-600 hover:bg-yellow-500 px-3 py-1 rounded text-sm"
-            >
-              ★ Rate
+          {req.status==="COMPLETED" && req.acceptor && !alreadyRated && (
+            <button onClick={()=>onRate(req.id, req.acceptor.name)} style={{ background:"rgba(255,184,0,0.12)", border:"1px solid var(--warning)", borderRadius:50, padding:"8px 14px", fontSize:11, fontWeight:700, color:"var(--warning)", cursor:"pointer", fontFamily:"var(--font-body)", letterSpacing:0.5 }}>
+              ★ RATE
             </button>
           )}
-
-          {/* Cancel */}
-          {["OPEN", "ACCEPTED"].includes(req.status) && (
-            <button
-              onClick={() => onCancel(req.id)}
-              className="bg-red-800 hover:bg-red-700 px-3 py-1 rounded text-sm"
-            >
-              Cancel
+          {["OPEN","ACCEPTED"].includes(req.status) && (
+            <button onClick={()=>onCancel(req.id)} style={{ background:"rgba(255,68,68,0.1)", border:"1px solid var(--danger)", borderRadius:50, padding:"8px 14px", fontSize:11, fontWeight:700, color:"var(--danger)", cursor:"pointer", fontFamily:"var(--font-body)", letterSpacing:0.5 }}>
+              CANCEL
             </button>
           )}
         </div>
@@ -338,4 +78,93 @@ function RequestCard({ req, navigate, onComplete, onCancel, onRate }) {
   );
 }
 
-export default RequestHistory;
+export default function RequestHistory() {
+  const navigate = useNavigate();
+  const [ratingModal, setRatingModal] = useState(null);
+
+  const { data, loading, error, refetch } = useQuery(MY_REQUESTS_QUERY, { fetchPolicy:"network-only" });
+  const [completeMutation] = useMutation(COMPLETE_REQUEST_MUTATION, { refetchQueries: [{ query: MY_REQUESTS_QUERY }] });
+  const [cancelMutation]   = useMutation(CANCEL_REQUEST_MUTATION,   { refetchQueries: [{ query: MY_REQUESTS_QUERY }] });
+
+  const handleComplete = async (req) => {
+    if (!confirm("Mark as completed?")) return;
+    try {
+      await completeMutation({ variables: { requestId: req.id } });
+      if (req.acceptor) setTimeout(() => setRatingModal({ requestId: req.id, ratedUser: req.acceptor.name }), 500);
+    } catch (err) { alert(err.message ?? "Failed"); }
+  };
+
+  const handleCancel = async (requestId) => {
+    if (!confirm("Cancel this request?")) return;
+    try { await cancelMutation({ variables: { requestId } }); }
+    catch (err) { alert(err.message ?? "Failed"); }
+  };
+
+  const allRequests     = data?.myRequests ?? [];
+  const activeRequests  = allRequests.filter(r => ["OPEN","ACCEPTED"].includes(r.status));
+  const historyRequests = allRequests.filter(r => !["OPEN","ACCEPTED"].includes(r.status));
+
+  const stats = [
+    { label:"TOTAL",  value:allRequests.length,                                       color:"var(--white)" },
+    { label:"DONE",   value:allRequests.filter(r=>r.status==="COMPLETED").length,     color:"var(--success)" },
+    { label:"CANCEL", value:allRequests.filter(r=>r.status==="CANCELLED").length,     color:"var(--danger)" },
+    { label:"EXPIRE", value:allRequests.filter(r=>r.status==="EXPIRED").length,       color:"var(--warning)" },
+  ];
+
+  return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)", maxWidth:480, margin:"0 auto", padding:"20px 20px 80px" }}>
+
+      {ratingModal && (
+        <RatingModal requestId={ratingModal.requestId} ratedUser={ratingModal.ratedUser} onClose={()=>setRatingModal(null)} onSuccess={()=>refetch()} />
+      )}
+
+      <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:24 }}>
+        <button onClick={()=>navigate("/dashboard")} style={{ background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:22 }}>←</button>
+        <h1 style={{ fontFamily:"var(--font-head)", fontSize:30, letterSpacing:1, color:"var(--white)", flex:1 }}>MY REQUESTS</h1>
+        <button onClick={()=>refetch()} style={{ background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:13, fontFamily:"var(--font-body)" }}>↻</button>
+      </div>
+
+      {allRequests.length > 0 && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:24 }}>
+          {stats.map(s => (
+            <div key={s.label} className="card" style={{ padding:"12px 8px", textAlign:"center" }}>
+              <p style={{ fontFamily:"var(--font-head)", fontSize:30, color:s.color, lineHeight:1 }}>{s.value}</p>
+              <p style={{ color:"var(--muted2)", fontSize:9, fontWeight:700, letterSpacing:0.5, marginTop:4, textTransform:"uppercase" }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <p style={{ color:"var(--danger)", fontSize:13, marginBottom:12 }}>{error.message}</p>}
+
+      {loading ? (
+        <p style={{ color:"var(--muted)", textAlign:"center", padding:40 }}>Loading...</p>
+      ) : allRequests.length===0 ? (
+        <div style={{ textAlign:"center", padding:60 }}>
+          <p style={{ fontSize:40, marginBottom:12 }}>📭</p>
+          <p style={{ color:"var(--muted)", fontSize:14 }}>No requests yet</p>
+          <button className="btn-accent" onClick={()=>navigate("/dashboard")} style={{ marginTop:20, padding:"12px 24px", fontSize:13, fontWeight:700 }}>
+            POST YOUR FIRST REQUEST
+          </button>
+        </div>
+      ) : (<>
+        {activeRequests.length > 0 && (
+          <div style={{ marginBottom:24 }}>
+            <p style={{ fontFamily:"var(--font-head)", fontSize:16, letterSpacing:1, color:"var(--accent)", marginBottom:12 }}>
+              ACTIVE ({activeRequests.length})
+            </p>
+            {activeRequests.map(req => <RequestCard key={req.id} req={req} navigate={navigate} onComplete={handleComplete} onCancel={handleCancel} onRate={(id,user)=>setRatingModal({ requestId:id, ratedUser:user })} />)}
+          </div>
+        )}
+        {historyRequests.length > 0 && (
+          <div>
+            <p style={{ fontFamily:"var(--font-head)", fontSize:16, letterSpacing:1, color:"var(--muted)", marginBottom:12 }}>
+              HISTORY ({historyRequests.length})
+            </p>
+            {historyRequests.map(req => <RequestCard key={req.id} req={req} navigate={navigate} onComplete={handleComplete} onCancel={handleCancel} onRate={(id,user)=>setRatingModal({ requestId:id, ratedUser:user })} />)}
+          </div>
+        )}
+      </>)}
+    </div>
+  );
+}
